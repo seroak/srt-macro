@@ -1,0 +1,83 @@
+{
+  "name": "srt",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "SRT 승차권 예매 폴링 매크로 (Playwright) + 웹 UI",
+  "main": "dist-electron/main.mjs",
+  "scripts": {
+    "srt": "tsx run_srt.ts",
+    "ui": "concurrently \"tsx ui.ts\" \"vite --config ui/vite.config.ts\"",
+    "ui:build": "vite build --config ui/vite.config.ts",
+    "ui:serve": "NODE_ENV=production tsx ui.ts",
+    "test": "tsx --test config.test.ts ui/src/seatSelection.test.ts",
+    "test:browser": "tsx --test trainSelect.browser.test.ts",
+    "electron:main:build": "esbuild electron/main.ts --bundle --platform=node --format=esm --external:electron --outfile=dist-electron/main.mjs",
+    "electron:dev": "npm run ui:build && npm run electron:main:build && NODE_ENV=production electron dist-electron/main.mjs",
+    "electron:vendor:win": "PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=win64 PLAYWRIGHT_BROWSERS_PATH=./vendor/ms-playwright-win npx playwright install chromium",
+    "electron:build": "npm run electron:vendor:win && npm run ui:build && npm run electron:main:build && electron-builder --win",
+    "electron:vendor:mac": "PLAYWRIGHT_BROWSERS_PATH=./vendor/ms-playwright-mac npx playwright install chromium",
+    "electron:build:mac": "npm run electron:vendor:mac && npm run ui:build && npm run electron:main:build && electron-builder --mac"
+  },
+  "dependencies": {
+    "node-notifier": "^10.0.1",
+    "playwright": "^1.49.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "tsx": "^4.19.2"
+  },
+  "devDependencies": {
+    "@types/node-notifier": "^8.0.5",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.2",
+    "concurrently": "^10.0.3",
+    "electron": "43.0.0",
+    "electron-builder": "^26.15.6",
+    "esbuild": "^0.28.1",
+    "vite": "^8.0.16"
+  },
+  "build": {
+    "appId": "kr.gyuyeol.srt-macro",
+    "productName": "SRT Macro",
+    "asar": true,
+    "asarUnpack": [
+      "*.ts",
+      "node_modules/**/*"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist-electron/**/*",
+      "ui/dist/**/*",
+      "*.ts",
+      "!ui/src/**",
+      "!electron/**",
+      "!*.test.ts",
+      "!*.browser.test.ts"
+    ],
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] }
+      ],
+      "extraResources": [
+        { "from": "vendor/ms-playwright-win", "to": "ms-playwright" }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["arm64"] }
+      ],
+      "extraResources": [
+        { "from": "vendor/ms-playwright-mac", "to": "ms-playwright" }
+      ],
+      "identity": "-",
+      "hardenedRuntime": true
+    }
+  }
+}

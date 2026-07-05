@@ -1,0 +1,47 @@
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.header {
+  background: linear-gradient(180deg, var(--srt-hover) 0%, var(--srt) 60%);
+  border-bottom: 1px solid rgba(255, 255, 255, .08);
+  box-shadow: var(--shadow-header);
+  padding: 13px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #fff;
+  font-size: var(--text-heading);
+  font-weight: var(--weight-bold);
+  letter-spacing: -0.3px;
+}
+
+.logoMark {
+  color: rgba(255, 255, 255, .85);
+  flex-shrink: 0;
+}
+
+.body {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  flex: 1;
+  overflow: hidden;
+}
+
+@media (max-width: 720px) {
+  .body {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+}

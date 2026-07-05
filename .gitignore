@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Builds
+dist-electron/
+release/
+
+# Environment and Secrets
+.env
+discord_webhook.txt
+srt_session.json
+
+# System Files
+.DS_Store
+Thumbs.db
+
+# Tool-specific directories
+.claude/
+.playwright-mcp/
+vendor/
+release/
+dist-electron/

@@ -1,0 +1,90 @@
+.section { display: flex; flex-direction: column; gap: 8px; }
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sectionLabel {
+  font-size: var(--text-caption);
+  font-weight: var(--weight-bold);
+  letter-spacing: .8px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: var(--text-caption);
+  font-weight: var(--weight-semibold);
+}
+.badgeOn  { background: #052e16; color: var(--green); }
+.badgeOff { background: #1c1f26; color: var(--muted); }
+
+.row { display: flex; gap: 6px; }
+
+.input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 7px 9px;
+  font-size: var(--text-body);
+  outline: none;
+  transition: border-color .15s;
+}
+.input:focus { border-color: var(--srt); }
+.input:focus-visible { box-shadow: 0 0 0 3px var(--focus-ring); }
+
+.toggleBtn {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: var(--radius);
+  padding: 7px 10px;
+  font-size: var(--text-caption);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color .15s, border-color .15s;
+}
+.toggleBtn:hover { color: var(--text); border-color: var(--text); }
+.toggleBtn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus-ring); }
+
+.actions { display: flex; gap: 8px; }
+
+.saveBtn,
+.testBtn {
+  flex: 1;
+  border: none;
+  border-radius: var(--radius);
+  font-size: var(--text-secondary);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+  padding: 7px 10px;
+  transition: opacity .15s, transform .1s, background-color .15s;
+}
+.saveBtn:active, .testBtn:active { transform: scale(.97); }
+.saveBtn:disabled, .testBtn:disabled { opacity: .35; cursor: not-allowed; }
+.saveBtn:focus-visible, .testBtn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.saveBtn { background: var(--srt); color: #fff; }
+.saveBtn:not(:disabled):hover { background: var(--srt-hover); }
+
+.testBtn {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+.testBtn:not(:disabled):hover { border-color: var(--muted); background: var(--surface2); }
+
+.msgOk  { font-size: var(--text-caption); color: var(--green); }
+.msgErr { font-size: var(--text-caption); color: var(--red); word-break: break-all; }

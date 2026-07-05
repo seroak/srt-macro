@@ -1,0 +1,156 @@
+.panel {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 18px 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.section { display: flex; flex-direction: column; gap: 8px; }
+
+.sectionLabel {
+  font-size: var(--text-caption);
+  font-weight: var(--weight-bold);
+  letter-spacing: .8px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--text-secondary);
+  color: var(--muted);
+}
+.field span { color: var(--text); font-weight: var(--weight-medium); font-size: var(--text-secondary); }
+.field small { color: var(--muted); font-size: var(--text-caption); font-weight: var(--weight-regular); }
+
+.field select,
+.field input[type="text"],
+.field input[type="date"] {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 7px 9px;
+  font-size: var(--text-body);
+  width: 100%;
+  outline: none;
+  transition: border-color .15s;
+}
+.field input[type="date"],
+.field input[type="time"] {
+  /* 다크 배경에서 기본(라이트) 스킴 렌더링 시 캘린더/시계 아이콘이 검게 나와 안 보임 */
+  color-scheme: dark;
+}
+.field select:focus,
+.field input:focus { border-color: var(--srt); }
+.field select:focus-visible,
+.field input:focus-visible { box-shadow: 0 0 0 3px var(--focus-ring); }
+.field select:disabled,
+.field input:disabled { opacity: .45; cursor: not-allowed; }
+
+.radioGroup { display: flex; flex-wrap: wrap; gap: 8px; }
+.radioLabel {
+  flex: 0 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  cursor: pointer;
+  font-size: var(--text-body);
+  white-space: nowrap;
+  transition: border-color .15s, background-color .15s;
+}
+.radioLabel:not(:has(input:disabled)):hover { border-color: var(--muted); background: var(--surface2); }
+.radioLabel input { accent-color: var(--srt); cursor: pointer; }
+.radioLabel:has(input:focus-visible) { box-shadow: 0 0 0 3px var(--focus-ring); }
+.radioLabel:has(input:disabled) { opacity: .45; cursor: not-allowed; }
+.radioChecked { border-color: var(--srt); }
+
+.divider { border: none; border-top: 1px solid var(--border); }
+
+.goToggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.goToggle input { accent-color: var(--orange); width: 15px; height: 15px; cursor: pointer; }
+.goToggle div { display: flex; flex-direction: column; gap: 2px; }
+.goToggle strong { font-size: var(--text-body); font-weight: var(--weight-bold); color: var(--text); }
+.goToggle small  { font-size: var(--text-caption); font-weight: var(--weight-regular); color: var(--muted); }
+.goToggle:hover { border-color: var(--muted); }
+.goToggle:has(input:focus-visible) { box-shadow: 0 0 0 3px var(--focus-ring); }
+.goActive { border-color: var(--orange); background: #1c0f00; }
+.goActive:hover { border-color: var(--orange); }
+
+.error {
+  font-size: var(--text-secondary);
+  color: var(--red);
+  padding: 6px 10px;
+  background: #2a0e0e;
+  border: 1px solid #5c1a1a;
+  border-radius: var(--radius);
+}
+
+.actions { display: flex; gap: 8px; }
+
+.btnStart,
+.btnStop,
+.btnEnter {
+  border: none;
+  border-radius: var(--radius);
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+  padding: 9px 14px;
+  transition: opacity .15s, transform .1s;
+}
+.btnStart:active, .btnStop:active, .btnEnter:active { transform: scale(.97); }
+.btnStart:disabled, .btnStop:disabled, .btnEnter:disabled { opacity: .35; cursor: not-allowed; }
+.btnStart:focus-visible, .btnStop:focus-visible, .btnEnter:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.btnStart { flex: 1; background: var(--srt); color: #fff; }
+.btnStart:not(:disabled):hover { background: var(--srt-hover); }
+
+.btnStop {
+  background: #3d1a1a;
+  color: var(--red);
+  border: 1px solid #5c2a2a;
+  padding: 9px 16px;
+}
+
+.btnEnter {
+  width: 100%;
+  background: #0f2d1a;
+  color: var(--green);
+  border: 1px solid #1a4d2e;
+  font-size: var(--text-secondary);
+  padding: 8px;
+}
+.btnEnterHighlight {
+  border-color: var(--green);
+  animation: pulse .9s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: .5; }
+}

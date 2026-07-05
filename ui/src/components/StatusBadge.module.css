@@ -1,0 +1,36 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: var(--text-secondary);
+  font-weight: var(--weight-semibold);
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.idle    { background: #1c1f26; color: var(--muted); }
+.stopped { background: #1c1f26; color: var(--muted); }
+
+.running {
+  background: #052e16;
+  color: var(--green);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.found {
+  background: #431407;
+  color: var(--orange);
+  animation: pulse 0.8s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
+}

@@ -1,0 +1,71 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --srt: #761232;
+  --srt-hover: #5c0e26;
+  --bg: #111318;
+  --surface: #1c1f26;
+  --surface2: #22262f;
+  --border: #2e3240;
+  --text: #dde1ea;
+  --muted: #6b7280;
+  --green: #22c55e;
+  --orange: #f97316;
+  --yellow: #facc15;
+  --red: #ef4444;
+  --radius: 8px;
+  --mono: 'SF Mono', 'Fira Code', 'Cascadia Mono', Menlo, monospace;
+
+  /* 브랜드 파생 토큰 — 포커스/깊이/강조 표현용 (기존 팔레트에서 유도, 신규 색 없음) */
+  --focus-ring: rgba(184, 45, 92, .55);
+  --shadow-header: 0 1px 0 rgba(0, 0, 0, .35), 0 4px 12px rgba(0, 0, 0, .25);
+  --found-bg: rgba(249, 115, 22, .10);
+
+  /* 타입 스케일 (rem, 4단계) — 역할별로 고정 사용, 임의 px 값 금지 */
+  --text-caption:   0.6875rem; /* 11px — 섹션 라벨, 보조 힌트 등 미세 메타 텍스트 */
+  --text-secondary: 0.8125rem; /* 13px — 배지·에러·로그 스트림 등 보조 본문 */
+  --text-body:      0.875rem;  /* 14px — 입력값·체크박스·버튼 등 1차 조작 텍스트 */
+  --text-heading:   1.0625rem; /* 17px — 헤더 브랜드 로고 */
+
+  --weight-regular:  400;
+  --weight-medium:   500;
+  --weight-semibold: 600;
+  --weight-bold:     700;
+
+  --leading-tight:   1.2;  /* 헤딩류 */
+  --leading-normal:  1.5;  /* 조작 텍스트·라벨 기본 */
+  --leading-relaxed: 1.7;  /* 로그 스트림 (mono, 다크 배경) */
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: var(--leading-normal);
+  height: 100vh;
+  overflow: hidden;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+input, select, button {
+  font-family: inherit;
+}
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
