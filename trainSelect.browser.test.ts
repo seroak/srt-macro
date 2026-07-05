@@ -51,7 +51,7 @@ after(async () => {
 
 test("일반실 취소표 발견 → seatAvailable=true, matchedSeat=일반실", async () => {
   await loadRows([row("101", "07:00", "09:00", SOLD_OUT, RESERVE_BTN())]);
-  const result = await select({ fromTime: "00:00", toTime: "23:59", seatClasses: ["일반실"] });
+  const result = await select({ seatClasses: ["일반실"] });
   assert.ok(result);
   assert.equal(result!.seatAvailable, true);
   assert.equal(result!.matchedSeat, "일반실");
@@ -60,7 +60,7 @@ test("일반실 취소표 발견 → seatAvailable=true, matchedSeat=일반실",
 
 test("일반실 매진 + 특실 취소표 → matchedSeat=특실", async () => {
   await loadRows([row("102", "07:10", "09:10", RESERVE_BTN(), SOLD_OUT)]);
-  const result = await select({ fromTime: "00:00", toTime: "23:59", seatClasses: ["일반실", "특실"] });
+  const result = await select({ seatClasses: ["일반실", "특실"] });
   assert.ok(result);
   assert.equal(result!.seatAvailable, true);
   assert.equal(result!.matchedSeat, "특실");
@@ -68,42 +68,54 @@ test("일반실 매진 + 특실 취소표 → matchedSeat=특실", async () => {
 
 test("일반실+특실 둘 다 취소표 → 우선순위상 앞 등급(일반실) 채택", async () => {
   await loadRows([row("103", "07:20", "09:20", RESERVE_BTN(), RESERVE_BTN())]);
-  const result = await select({ fromTime: "00:00", toTime: "23:59", seatClasses: ["일반실", "특실"] });
+  const result = await select({ seatClasses: ["일반실", "특실"] });
   assert.ok(result);
   assert.equal(result!.matchedSeat, "일반실");
 });
 
 test("입석+좌석 취소표(requestReservationInfoAnn) 감지 → matchedSeat=입석+좌석", async () => {
   await loadRows([row("104", "07:30", "09:30", SOLD_OUT, STANDING_BTN())]);
-  const result = await select({ fromTime: "00:00", toTime: "23:59", seatClasses: ["입석+좌석"] });
+  const result = await select({ seatClasses: ["입석+좌석"] });
   assert.ok(result);
   assert.equal(result!.seatAvailable, true);
   assert.equal(result!.matchedSeat, "입석+좌석");
 });
 
-test("범위 밖 열차는 제외되고 inRangeCount가 정확히 집계된다", async () => {
+test("여러 열차 중 가장 이른(첫) 잔여석 열차를 선택하고 candidateCount를 집계한다", async () => {
   await loadRows([
-    row("105", "05:00", "05:30", SOLD_OUT, SOLD_OUT), // 범위 밖 (< fromTime)
-    row("106", "07:00", "09:00", SOLD_OUT, SOLD_OUT), // 범위 내
-    row("107", "20:00", "22:00", SOLD_OUT, SOLD_OUT), // 범위 밖 (> toTime)
+    row("105", "05:00", "05:30", SOLD_OUT, SOLD_OUT), // 매진
+    row("106", "07:00", "09:00", SOLD_OUT, RESERVE_BTN()), // 잔여석 — 이 열차가 선택돼야 함
+    row("107", "20:00", "22:00", SOLD_OUT, RESERVE_BTN()), // 더 늦지만 역시 잔여석
   ]);
-  const result = await select({ fromTime: "06:00", toTime: "18:00", seatClasses: ["일반실"] });
+  const result = await select({ seatClasses: ["일반실"] });
   assert.ok(result);
   assert.equal(result!.trainNo, "106");
-  assert.equal(result!.inRangeCount, 1);
+  assert.equal(result!.candidateCount, 2);
 });
 
 test("전부 매진 + 예약대기 버튼 → seatAvailable=false, waitlistAvailable=true", async () => {
   await loadRows([row("108", "07:40", "09:40", SOLD_OUT, WAITLIST_BTN())]);
-  const result = await select({ fromTime: "00:00", toTime: "23:59", seatClasses: ["일반실"] });
+  const result = await select({ seatClasses: ["일반실"] });
   assert.ok(result);
   assert.equal(result!.seatAvailable, false);
   assert.equal(result!.waitlistAvailable, true);
   assert.equal(result!.matchedSeat, "일반실");
 });
 
-test("범위 내 열차가 없으면 null 반환", async () => {
-  await loadRows([row("109", "05:00", "05:30", SOLD_OUT, SOLD_OUT)]);
-  const result = await select({ fromTime: "06:00", toTime: "18:00", seatClasses: ["일반실"] });
+test("전 열차 매진이면 seatAvailable=false로 첫 열차 정보를 반환한다", async () => {
+  await loadRows([
+    row("109", "05:00", "05:30", SOLD_OUT, SOLD_OUT),
+    row("110", "06:00", "06:30", SOLD_OUT, SOLD_OUT),
+  ]);
+  const result = await select({ seatClasses: ["일반실"] });
+  assert.ok(result);
+  assert.equal(result!.trainNo, "109");
+  assert.equal(result!.seatAvailable, false);
+  assert.equal(result!.candidateCount, 2);
+});
+
+test("결과 테이블에 행이 없으면 null 반환", async () => {
+  await loadRows([]);
+  const result = await select({ seatClasses: ["일반실"] });
   assert.equal(result, null);
 });

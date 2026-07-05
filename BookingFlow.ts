@@ -1,6 +1,6 @@
 import notifier from "node-notifier";
 import { type Page } from "playwright";
-import { DEP, ARR, TRAIN_FROM, TRAIN_TO } from "./config.ts";
+import { DEP, ARR, TIME } from "./config.ts";
 import { log, sleep, waitEnter } from "./utils.ts";
 import { sendDiscord } from "./discord.ts";
 
@@ -180,7 +180,7 @@ export class BookingFlow {
 
   // ─── OS 알림 + 소리 + Discord ────────────────────────────────────────
   private notify(): void {
-    const trainInfo = `${DEP}→${ARR} ${TRAIN_FROM}~${TRAIN_TO} ${this.seatLabel}`;
+    const trainInfo = `${DEP}→${ARR} ${TIME}시 이후 ${this.seatLabel}`;
     const msg = `SRT 좌석 확보! ${trainInfo} — 결제 진행하세요`;
 
     console.log("\n");
