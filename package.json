@@ -9,22 +9,22 @@
     "srt": "tsx run_srt.ts",
     "ui": "concurrently \"tsx ui.ts\" \"vite --config ui/vite.config.ts\"",
     "ui:build": "vite build --config ui/vite.config.ts",
-    "ui:serve": "NODE_ENV=production tsx ui.ts",
+    "ui:serve": "cross-env NODE_ENV=production tsx ui.ts",
     "test": "tsx --test config.test.ts ui/src/seatSelection.test.ts",
     "test:browser": "tsx --test trainSelect.browser.test.ts",
     "electron:main:build": "esbuild electron/main.ts --bundle --platform=node --format=esm --external:electron --outfile=dist-electron/main.mjs",
-    "electron:dev": "npm run ui:build && npm run electron:main:build && NODE_ENV=production electron dist-electron/main.mjs",
-    "electron:vendor:win": "PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=win64 PLAYWRIGHT_BROWSERS_PATH=./vendor/ms-playwright-win npx playwright install chromium",
-    "electron:build": "npm run electron:vendor:win && npm run ui:build && npm run electron:main:build && electron-builder --win",
-    "electron:vendor:mac": "PLAYWRIGHT_BROWSERS_PATH=./vendor/ms-playwright-mac npx playwright install chromium",
-    "electron:build:mac": "npm run electron:vendor:mac && npm run ui:build && npm run electron:main:build && electron-builder --mac"
+    "electron:macro:build": "esbuild run_srt.ts --bundle --platform=node --format=esm --external:playwright --external:node-notifier --outfile=dist-electron/macro.mjs",
+    "electron:dev": "npm run ui:build && npm run electron:main:build && cross-env NODE_ENV=production electron dist-electron/main.mjs",
+    "electron:vendor:win": "cross-env PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=win64 PLAYWRIGHT_BROWSERS_PATH=./vendor/ms-playwright-win playwright install chromium",
+    "electron:build": "npm run electron:vendor:win && npm run ui:build && npm run electron:main:build && npm run electron:macro:build && electron-builder --win",
+    "electron:vendor:mac": "cross-env PLAYWRIGHT_BROWSERS_PATH=./vendor/ms-playwright-mac npx playwright install chromium",
+    "electron:build:mac": "npm run electron:vendor:mac && npm run ui:build && npm run electron:main:build && npm run electron:macro:build && electron-builder --mac"
   },
   "dependencies": {
     "node-notifier": "^10.0.1",
     "playwright": "^1.49.0",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7",
-    "tsx": "^4.19.2"
+    "react-dom": "^19.2.7"
   },
   "devDependencies": {
     "@types/node-notifier": "^8.0.5",
@@ -32,9 +32,11 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.2",
     "concurrently": "^10.0.3",
+    "cross-env": "^10.1.0",
     "electron": "43.0.0",
     "electron-builder": "^26.15.6",
     "esbuild": "^0.28.1",
+    "tsx": "^4.19.2",
     "vite": "^8.0.16"
   },
   "build": {
@@ -42,7 +44,7 @@
     "productName": "SRT Macro",
     "asar": true,
     "asarUnpack": [
-      "*.ts",
+      "dist-electron/macro.mjs",
       "node_modules/**/*"
     ],
     "directories": {
@@ -51,18 +53,23 @@
     "files": [
       "dist-electron/**/*",
       "ui/dist/**/*",
-      "*.ts",
       "!ui/src/**",
-      "!electron/**",
-      "!*.test.ts",
-      "!*.browser.test.ts"
+      "!electron/**"
     ],
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "extraResources": [
-        { "from": "vendor/ms-playwright-win", "to": "ms-playwright" }
+        {
+          "from": "vendor/ms-playwright-win",
+          "to": "ms-playwright"
+        }
       ]
     },
     "nsis": {
@@ -71,10 +78,18 @@
     },
     "mac": {
       "target": [
-        { "target": "dmg", "arch": ["arm64"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
       ],
       "extraResources": [
-        { "from": "vendor/ms-playwright-mac", "to": "ms-playwright" }
+        {
+          "from": "vendor/ms-playwright-mac",
+          "to": "ms-playwright"
+        }
       ],
       "identity": "-",
       "hardenedRuntime": true
