@@ -82,44 +82,63 @@ function createWindow(port: number): void {
   win.loadURL(`http://localhost:${port}`);
 }
 
-app.whenReady().then(() => {
-  // 세션 파일 등 로컬 상태 저장 위치 — config.ts가 이 값을 읽어 절대경로로 사용한다.
-  process.env.SRT_DATA_DIR = app.getPath("userData");
+// 단일 인스턴스 락 — 이미 실행 중인데 또 실행되면(재설치 후 재실행 등) 새 프로세스는
+// 즉시 종료하고, 기존 실행 중인 인스턴스가 창을 포커스한다. 이게 없으면 두 프로세스가
+// 동시에 API 서버 포트(3001)를 잡으려다 충돌하는 상황이 생긴다(신규 설치와 무관하게도
+// 재현 가능했던 문제 — ui.ts의 listen(0) 폴백으로 크래시 자체는 막았지만, 앱을 두 번
+// 띄우는 것 자체를 막는 게 사용자 경험상 더 낫다).
+const gotLock = app.requestSingleInstanceLock();
 
-  // 번들된 Chromium 리소스 — extraResources로 패키징 시 resources/ms-playwright에 위치.
-  // 없으면(개발 모드) 시스템 전역 캐시(~/Library/Caches/ms-playwright 등)를 그대로 사용.
-  const bundledBrowsersPath = join(process.resourcesPath, "ms-playwright");
-  if (existsSync(bundledBrowsersPath)) {
-    process.env.PLAYWRIGHT_BROWSERS_PATH = bundledBrowsersPath;
-  }
-
-  const server = startServer({
-    port: PORT,
-    spawnMacro: spawnMacroViaElectronNode,
-    openBrowser: false, // Electron이 자체 BrowserWindow로 띄우므로 CLI의 자동 브라우저 오픈은 끔
-    // ui.ts가 esbuild로 이 파일과 하나의 번들(dist-electron/main.mjs)로 합쳐지면
-    // ui.ts 내부의 import.meta.dirname이 번들 자신의 위치(dist-electron/)를 가리키게 돼
-    // 기본 폴백(`<번들위치>/ui/dist`)이 틀어진다 — ui/dist는 asarUnpack 대상이 아니라
-    // (읽기 전용이라 asar 내부에 있어도 무방) BUNDLE_DIR(asar 내부 경로) 기준으로 계산한다.
-    // SRT_ROOT(언팩 경로)를 쓰면 안 됨 — ui/dist는 거기 존재하지 않는다.
-    distDir: join(BUNDLE_DIR, "ui/dist"),
-    // Finder에서 더블클릭 실행되면 NODE_ENV 등 터미널 환경변수를 전혀 상속받지 않고,
-    // ui.ts는 ESM이라 import 시점에 이미 값이 굳어버려 여기서 process.env를 나중에
-    // 설정해도 반영 안 됨 — Electron은 항상 정적 파일 서빙 모드이므로 명시적으로 true.
-    isServe: true,
-  });
-
-  server.once("listening", () => {
-    const addr = server.address();
-    const actualPort = addr && typeof addr === "object" ? addr.port : PORT;
-    createWindow(actualPort);
-  });
-});
-
-app.on("before-quit", () => {
-  stopMacro();
-});
-
-app.on("window-all-closed", () => {
+if (!gotLock) {
   app.quit();
-});
+} else {
+  app.on("second-instance", () => {
+    const win = BrowserWindow.getAllWindows()[0];
+    if (win) {
+      if (win.isMinimized()) win.restore();
+      win.focus();
+    }
+  });
+
+  app.whenReady().then(() => {
+    // 세션 파일 등 로컬 상태 저장 위치 — config.ts가 이 값을 읽어 절대경로로 사용한다.
+    process.env.SRT_DATA_DIR = app.getPath("userData");
+
+    // 번들된 Chromium 리소스 — extraResources로 패키징 시 resources/ms-playwright에 위치.
+    // 없으면(개발 모드) 시스템 전역 캐시(~/Library/Caches/ms-playwright 등)를 그대로 사용.
+    const bundledBrowsersPath = join(process.resourcesPath, "ms-playwright");
+    if (existsSync(bundledBrowsersPath)) {
+      process.env.PLAYWRIGHT_BROWSERS_PATH = bundledBrowsersPath;
+    }
+
+    const server = startServer({
+      port: PORT,
+      spawnMacro: spawnMacroViaElectronNode,
+      openBrowser: false, // Electron이 자체 BrowserWindow로 띄우므로 CLI의 자동 브라우저 오픈은 끔
+      // ui.ts가 esbuild로 이 파일과 하나의 번들(dist-electron/main.mjs)로 합쳐지면
+      // ui.ts 내부의 import.meta.dirname이 번들 자신의 위치(dist-electron/)를 가리키게 돼
+      // 기본 폴백(`<번들위치>/ui/dist`)이 틀어진다 — ui/dist는 asarUnpack 대상이 아니라
+      // (읽기 전용이라 asar 내부에 있어도 무방) BUNDLE_DIR(asar 내부 경로) 기준으로 계산한다.
+      // SRT_ROOT(언팩 경로)를 쓰면 안 됨 — ui/dist는 거기 존재하지 않는다.
+      distDir: join(BUNDLE_DIR, "ui/dist"),
+      // Finder에서 더블클릭 실행되면 NODE_ENV 등 터미널 환경변수를 전혀 상속받지 않고,
+      // ui.ts는 ESM이라 import 시점에 이미 값이 굳어버려 여기서 process.env를 나중에
+      // 설정해도 반영 안 됨 — Electron은 항상 정적 파일 서빙 모드이므로 명시적으로 true.
+      isServe: true,
+    });
+
+    server.once("listening", () => {
+      const addr = server.address();
+      const actualPort = addr && typeof addr === "object" ? addr.port : PORT;
+      createWindow(actualPort);
+    });
+  });
+
+  app.on("before-quit", () => {
+    stopMacro();
+  });
+
+  app.on("window-all-closed", () => {
+    app.quit();
+  });
+}
