@@ -6,10 +6,14 @@
  * React UI(ui/dist)와 API 서버 코드는 손대지 않고 그대로 재사용한다.
  *
  * 매크로 본체(run_srt.ts 및 SrtSession/BookingFlow/WaitlistFlow 등 의존성 전체)는
- * esbuild로 번들하지 않는다 — Playwright의 driver/bootstrap 스크립트가 번들러와
- * 궁합이 나쁘기로 알려져 있어서, .ts 소스와 node_modules를 패키지에 그대로 포함시키고
- * tsx로 직접 실행한다. Electron 바이너리 자체가 Node를 내장하므로 별도 Node.js 설치
- * 없이 `process.execPath` + `ELECTRON_RUN_AS_NODE=1` 조합으로 자식 프로세스를 띄운다.
+ * 빌드 시점에 esbuild로 dist-electron/macro.mjs 하나로 번들된다 (electron:macro:build
+ * 스크립트) — Playwright의 driver/bootstrap을 건드리는 게 아니라 우리 .ts 소스만
+ * 번들하는 것이므로 문제 없다. Playwright/node-notifier는 external로 남겨 패키징된
+ * node_modules(asarUnpack)에서 resolve한다. 이렇게 하면 런타임에 tsx/esbuild 자체가
+ * 전혀 필요 없어져, 패키징한 node_modules의 esbuild 네이티브 바이너리가 빌드 플랫폼과
+ * 다를 때(예: mac에서 패키징한 걸 Windows에 배포) 발생하던 크래시가 원천 제거된다.
+ * Electron 바이너리 자체가 Node를 내장하므로 별도 Node.js 설치 없이
+ * `process.execPath` + `ELECTRON_RUN_AS_NODE=1` 조합으로 자식 프로세스를 띄운다.
  *
  * 빌드: esbuild가 이 파일 + import한 ../ui.ts(둘 다 Playwright 미의존)를 함께
  *       하나의 ESM 번들로 묶어 dist-electron/main.mjs로 만든다 (electron:build 스크립트).
@@ -38,25 +42,28 @@ const PORT = 3001;
 //   import.meta.dirname 그대로 사용해도 안전 (파일 읽기는 asar 투명 지원).
 const BUNDLE_DIR = join(import.meta.dirname, "..");
 
-// SRT_ROOT: spawn(cwd)·run_srt.ts 실행처럼 진짜 OS 파일시스템 경로가 필요한 곳.
+// SRT_ROOT: spawn(cwd)처럼 진짜 OS 파일시스템 경로가 필요한 곳.
 // 개발 모드(비패키징): BUNDLE_DIR 그대로(= srt/, 실제 디렉토리).
-// 패키징 모드: asarUnpack("*.ts","node_modules/**/*")로 언팩된 실제 파일이
-//   Contents/Resources/app.asar.unpacked/ 아래에 있다(run_srt.ts, node_modules 모두
-//   같은 레벨) — 이게 진짜 SRT_ROOT다.
+// 패키징 모드: asarUnpack("dist-electron/macro.mjs","node_modules/**/*")로 언팩된 실제
+//   파일이 Contents/Resources/app.asar.unpacked/ 아래에 있다 — 이게 진짜 SRT_ROOT다.
 const SRT_ROOT = app.isPackaged
   ? join(process.resourcesPath, "app.asar.unpacked")
   : BUNDLE_DIR;
 
-// node_modules 위치: 개발 모드는 모노레포 루트(SRT_ROOT의 부모, 호이스팅),
-// 패키징 모드는 electron-builder가 앱 자체 node_modules로 수집하므로 SRT_ROOT와 동일 레벨.
-const NODE_MODULES_ROOT = app.isPackaged ? SRT_ROOT : join(SRT_ROOT, "..");
-
-/** Electron 모드 전용 매크로 spawn 전략 — Electron 바이너리를 순수 Node로 재사용해 tsx 실행 */
+/** Electron 모드 전용 매크로 spawn 전략 — Electron 바이너리를 순수 Node로 재사용해
+ *  빌드 시점에 번들된 macro.mjs를 직접 실행한다 (tsx/esbuild 런타임 의존 없음). */
 function spawnMacroViaElectronNode(cliArgs: string[]): ChildProcess {
-  const tsxCli = join(NODE_MODULES_ROOT, "node_modules", "tsx", "dist", "cli.mjs");
-  const runSrt = join(SRT_ROOT, "run_srt.ts");
+  // macro.mjs는 dist-electron/main.mjs와 항상 같은 디렉토리에 나란히 빌드된다.
+  // 패키징 모드: main.mjs는 asar 내부에 있지만 macro.mjs는 asarUnpack 대상이라
+  //   실제로는 app.asar.unpacked/dist-electron/ 아래에 존재 — spawn은 asar를
+  //   이해 못 하므로 반드시 언팩된 경로를 가리켜야 한다.
+  // 개발 모드: import.meta.dirname 자체가 이미 실제 디렉토리(dist-electron/)라
+  //   asarUnpack 개념이 필요 없다.
+  const macroEntry = app.isPackaged
+    ? join(process.resourcesPath, "app.asar.unpacked", "dist-electron", "macro.mjs")
+    : join(import.meta.dirname, "macro.mjs");
 
-  return spawn(process.execPath, [tsxCli, runSrt, ...cliArgs], {
+  return spawn(process.execPath, [macroEntry, ...cliArgs], {
     cwd: SRT_ROOT,
     env: {
       ...process.env,
