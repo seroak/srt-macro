@@ -83,30 +83,6 @@ export default function ConfigForm({ config, set, validate, status, waitingEnter
       </div>
 
       <div className={styles.section}>
-        <p className={styles.sectionLabel}>출발 시각 범위</p>
-        <div className={styles.row2}>
-          <label className={styles.field}>
-            <span>시작</span>
-            <input
-              type="time"
-              value={config.from}
-              onChange={e => set("from", e.target.value)}
-              disabled={running}
-            />
-          </label>
-          <label className={styles.field}>
-            <span>종료</span>
-            <input
-              type="time"
-              value={config.to}
-              onChange={e => set("to", e.target.value)}
-              disabled={running}
-            />
-          </label>
-        </div>
-      </div>
-
-      <div className={styles.section}>
         <p className={styles.sectionLabel}>좌석 등급</p>
         <div className={styles.radioGroup}>
           {SEAT_ORDER.map(seat => (

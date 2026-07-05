@@ -15,7 +15,6 @@ srt_session.json
 Thumbs.db
 
 # Tool-specific directories
-.claude/
 .playwright-mcp/
 vendor/
 release/

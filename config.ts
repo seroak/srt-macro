@@ -2,9 +2,9 @@
  * srt/config.ts — SRT 예매 매크로 설정 & CLI 인수
  *
  * 실행 예시:
- *   tsx srt/run_srt.ts --dep 수서 --arr 부산 --date 20260710 --time 06 --from 06:00 --to 18:00 --seat 일반실
- *   tsx srt/run_srt.ts --dep 수서 --arr 부산 --date 20260710 --from 07:30 --to 09:00 --seat 특실 --go
- *   tsx srt/run_srt.ts --dep 수서 --arr 부산 --date 20260710 --from 07:30 --to 09:00 --seat 일반실,특실 --go
+ *   tsx srt/run_srt.ts --dep 수서 --arr 부산 --date 20260710 --time 06 --seat 일반실
+ *   tsx srt/run_srt.ts --dep 수서 --arr 부산 --date 20260710 --time 14 --seat 특실 --go
+ *   tsx srt/run_srt.ts --dep 수서 --arr 부산 --date 20260710 --time 14 --seat 일반실,특실 --go
  */
 
 import { join } from "path";
@@ -90,15 +90,6 @@ export const DATE = getArg("--date");
  * SRT 폼 제출 value: "060000" 형태 — 내부 변환은 SrtSession에서 처리
  */
 export const TIME = getArg("--time", "06");
-
-/**
- * 목표 열차 출발 시각 범위 HH:MM 형식.
- * 범위 내 첫 번째 잔여석 열차를 예약.
- * - TRAIN_FROM 미지정 시 00:00 으로 간주 (제한 없음)
- * - TRAIN_TO   미지정 시 23:59 으로 간주 (제한 없음)
- */
-export const TRAIN_FROM = getArg("--from", "00:00");
-export const TRAIN_TO   = getArg("--to",   "23:59");
 
 /**
  * 좌석 등급: "일반실" (기본), "특실", "입석+좌석"

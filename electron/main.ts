@@ -67,14 +67,19 @@ function spawnMacroViaElectronNode(cliArgs: string[]): ChildProcess {
   });
 }
 
-function createWindow(): void {
+/**
+ * port: 실제로 서버가 바인딩된 포트. 선호 포트(PORT=3001)가 이미 사용 중이면
+ * ui.ts의 startServer()가 listen(0)으로 OS 배정 포트에 뜨므로, 하드코딩된 PORT가
+ * 아니라 server.address()로 읽은 실제 포트를 열어야 한다 (안 그러면 빈 화면).
+ */
+function createWindow(port: number): void {
   const win = new BrowserWindow({
     width: 1180,
     height: 820,
     title: "SRT 예매 매크로",
     autoHideMenuBar: true,
   });
-  win.loadURL(`http://localhost:${PORT}`);
+  win.loadURL(`http://localhost:${port}`);
 }
 
 app.whenReady().then(() => {
@@ -104,7 +109,11 @@ app.whenReady().then(() => {
     isServe: true,
   });
 
-  server.once("listening", createWindow);
+  server.once("listening", () => {
+    const addr = server.address();
+    const actualPort = addr && typeof addr === "object" ? addr.port : PORT;
+    createWindow(actualPort);
+  });
 });
 
 app.on("before-quit", () => {

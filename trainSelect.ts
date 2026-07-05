@@ -8,10 +8,6 @@
  */
 
 export interface SeatSelectOpts {
-  /** 목표 시각 범위 시작 HH:MM */
-  fromTime: string;
-  /** 목표 시각 범위 종료 HH:MM */
-  toTime: string;
   /** 감시할 좌석 등급 목록 (우선순위 = 배열 순서) */
   seatClasses: string[];
 }
@@ -26,8 +22,8 @@ export interface TrainSelectResult {
   seatAvailable: boolean;
   /** 해당 좌석 컬럼의 텍스트 ("예약하기", "매진", "예약대기" 등) */
   statusText: string;
-  /** 범위 내 열차 총 수 */
-  inRangeCount: number;
+  /** 스캔한 열차 총 수 */
+  candidateCount: number;
   /** 예약대기 버튼 존재 여부 (매진 + WAITLIST 모드에서 유의미) */
   waitlistAvailable: boolean;
   /** seatClasses 중 실제로 취소표/예약대기가 매칭된 등급 (복수 등급 감시 시 사용) */
@@ -35,10 +31,10 @@ export interface TrainSelectResult {
 }
 
 /**
- * 결과 테이블을 파싱해 [fromTime ~ toTime] 범위 내 좌석 상태 반환.
- * - 범위 내 잔여석 열차 발견 → 해당 열차 반환 (seatAvailable: true)
- * - 범위 내 열차 있지만 전부 매진 → 첫 번째 열차 반환 (seatAvailable: false)
- * - 범위 내 열차 없음 → null
+ * 결과 테이블을 위에서부터(=조회 기준 시각 이후 가장 이른 순) 스캔해 좌석 상태 반환.
+ * - 잔여석 열차 발견 → 해당 열차 반환 (seatAvailable: true, 가장 이른 열차 우선)
+ * - 열차는 있지만 전부 매진 → 첫 번째 열차 반환 (seatAvailable: false)
+ * - 결과 테이블에 열차 없음 → null
  */
 // NOTE: 이 함수 안에서는 `const f = (x) => ...` 형태의 지역 헬퍼 함수를 만들지 않는다.
 // tsx(esbuild)가 keepNames 옵션으로 모든 지역 함수를 `__name(fn, "이름")` 호출로
@@ -46,11 +42,11 @@ export interface TrainSelectResult {
 // .toString()으로 직렬화해 브라우저에 보낼 때 "__name is not defined"로 깨진다.
 // 그래서 컬럼 인덱스/입석 여부 판별은 지역 함수로 추출하지 않고 인라인 표현식으로 둔다.
 export function selectTargetTrain(opts: SeatSelectOpts): TrainSelectResult | null {
-  const { fromTime, toTime, seatClasses } = opts;
+  const { seatClasses } = opts;
 
   const rows = document.querySelectorAll("table tbody tr");
-  let firstInRange: TrainSelectResult | null = null;
-  let inRangeCount = 0;
+  let firstCandidate: TrainSelectResult | null = null;
+  let candidateCount = 0;
 
   for (let i = 0; i < rows.length; i++) {
     const tds = rows[i].querySelectorAll("td");
@@ -60,9 +56,7 @@ export function selectTargetTrain(opts: SeatSelectOpts): TrainSelectResult | nul
     const depTime = (tds[3].querySelector("em.time") as HTMLElement | null)?.innerText?.trim() ?? "";
     const arrTime = (tds[4].querySelector("em.time") as HTMLElement | null)?.innerText?.trim() ?? "";
 
-    // HH:MM 문자열 비교로 범위 필터
-    if (depTime < fromTime || depTime > toTime) continue;
-    inRangeCount++;
+    candidateCount++;
 
     // ── 좌석 등급을 우선순위(입력 순서)대로 검사 ──────────────────────
     // 취소표가 있는 첫 번째 등급을 즉시 채택. 없으면 예약대기 가능한
@@ -149,37 +143,37 @@ export function selectTargetTrain(opts: SeatSelectOpts): TrainSelectResult | nul
         arrTime,
         seatAvailable: true,
         statusText,
-        inRangeCount,
+        candidateCount,
         waitlistAvailable: false,
         matchedSeat,
       };
     }
-    if (!firstInRange) {
-      firstInRange = {
+    if (!firstCandidate) {
+      firstCandidate = {
         rowIndex: i,
         trainNo,
         depTime,
         arrTime,
         seatAvailable: false,
         statusText,
-        inRangeCount: 0,
+        candidateCount: 0,
         waitlistAvailable,
         matchedSeat,
       };
-    } else if (waitlistAvailable && !firstInRange.waitlistAvailable) {
+    } else if (waitlistAvailable && !firstCandidate.waitlistAvailable) {
       // 예약대기 버튼 있는 열차를 우선 반환
-      firstInRange = {
+      firstCandidate = {
         rowIndex: i,
         trainNo,
         depTime,
         arrTime,
         seatAvailable: false,
         statusText,
-        inRangeCount: 0,
+        candidateCount: 0,
         waitlistAvailable,
         matchedSeat,
       };
     }
   }
-  return firstInRange ? { ...firstInRange, inRangeCount } : null;
+  return firstCandidate ? { ...firstCandidate, candidateCount } : null;
 }

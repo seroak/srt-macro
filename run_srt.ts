@@ -2,25 +2,23 @@
  * run_srt.ts — SRT 승차권 예매 폴링 매크로 진입점
  *
  * 실행:
- *   tsx srt/run_srt.ts --dep 수서 --arr 부산 --date 20260710 --time 06 --from 06:00 --to 18:00 --seat 일반실
+ *   tsx srt/run_srt.ts --dep 수서 --arr 부산 --date 20260710 --time 06 --seat 일반실
  *       → dry-run: 좌석 발견 로그만 찍고 예약 클릭 없음
  *
- *   tsx srt/run_srt.ts --dep 수서 --arr 부산 --date 20260710 --from 06:00 --to 18:00 --seat 일반실 --go
+ *   tsx srt/run_srt.ts --dep 수서 --arr 부산 --date 20260710 --time 14 --seat 일반실 --go
  *       → 실전: 좌석 발견 시 자동 예약 (결제는 사용자 수동)
  *
  * 옵션:
  *   --dep       출발역 이름  (기본: 수서)
  *   --arr       도착역 이름  (기본: 부산)
  *   --date      탑승일 YYYYMMDD  (필수)
- *   --time      조회 기준 시각 00/02/04/06/08/10/12/14/16/18/20/22  (기본: 06)
- *   --from      목표 시각 범위 시작 HH:MM  (기본: 00:00)
- *   --to        목표 시각 범위 종료 HH:MM  (기본: 23:59)
+ *   --time      조회 기준 시각 00/02/04/06/08/10/12/14/16/18/20/22  (기본: 06) — 이 시각 이후 결과를 위에서부터(가장 이른 순) 탐색
  *   --seat      좌석 등급 일반실|특실  (기본: 일반실, 콤마로 복수 지정 가능: 일반실,특실)
  *   --interval  폴링 간격 ms (기본: 0 = 800~1500ms 랜덤)
  *   --go        예약 실전 실행 플래그 (없으면 dry-run)
  */
 
-import { GO, DEP, ARR, DATE, TIME, TRAIN_FROM, TRAIN_TO, SEAT_LABEL, INTERVAL, MODE, daysUntil, SMS_AGREE, WAIT_SPECIAL } from "./config.ts";
+import { GO, DEP, ARR, DATE, TIME, SEAT_LABEL, INTERVAL, MODE, daysUntil, SMS_AGREE, WAIT_SPECIAL } from "./config.ts";
 import { log, sleep, randomDelay, closeRl } from "./utils.ts";
 import { SrtSession } from "./SrtSession.ts";
 import { BookingFlow } from "./BookingFlow.ts";
@@ -41,7 +39,6 @@ async function main() {
   console.log(`  구간    : ${DEP} → ${ARR}`);
   console.log(`  날짜    : ${DATE}`);
   console.log(`  조회시각: ${TIME}시 이후`);
-  console.log(`  목표범위: ${TRAIN_FROM} ~ ${TRAIN_TO}`);
   console.log(`  좌석    : ${SEAT_LABEL}`);
   console.log(`  디스코드: ${isDiscordConfigured() ? "설정됨" : "미설정 (알림 안 옴!)"}`);
   if (MODE === "WAITLIST") {
@@ -68,14 +65,14 @@ async function main() {
 
   // ─── WAITLIST 모드: 예약대기 신청 ──────────────────────────────────────
   if (MODE === "WAITLIST") {
-    log(`예약대기 탐색 시작 — 목표 범위: ${TRAIN_FROM} ~ ${TRAIN_TO} ${SEAT_LABEL}`);
+    log(`예약대기 탐색 시작 — ${TIME}시 이후 ${SEAT_LABEL}`);
 
     while (true) {
       pollCount++;
       const train = await session.findTargetTrain();
 
       if (!train) {
-        log(`${pollCount}회 — ${TRAIN_FROM}~${TRAIN_TO} 범위 열차 없음. 재조회 중...`);
+        log(`${pollCount}회 — ${TIME}시 이후 열차 없음. 재조회 중...`);
         await pollDelay();
         await session.requery();
         continue;
@@ -107,20 +104,20 @@ async function main() {
         break;
       }
 
-      log(`${prefix} 매진 (예약대기 버튼 미감지, 범위 내 ${train.inRangeCount}개). 재조회 중...`);
+      log(`${prefix} 매진 (예약대기 버튼 미감지, 조회된 ${train.candidateCount}개). 재조회 중...`);
       await pollDelay();
       await session.requery();
     }
   } else {
     // ─── POLLING 모드: 취소표 실시간 폴링 ───────────────────────────────
-    log(`폴링 시작 — 목표 범위: ${TRAIN_FROM} ~ ${TRAIN_TO} ${SEAT_LABEL}`);
+    log(`폴링 시작 — ${TIME}시 이후 ${SEAT_LABEL}`);
 
     while (true) {
       pollCount++;
       const train = await session.findTargetTrain();
 
       if (!train) {
-        log(`${pollCount}회 — ${TRAIN_FROM}~${TRAIN_TO} 범위 열차 없음. 재조회 중...`);
+        log(`${pollCount}회 — ${TIME}시 이후 열차 없음. 재조회 중...`);
         await pollDelay();
         await session.requery();
         continue;
@@ -129,7 +126,7 @@ async function main() {
       const prefix = `${pollCount}회 — ${train.trainNo}호 ${train.depTime} [${train.matchedSeat}]`;
 
       if (!train.seatAvailable) {
-        log(`${prefix} 매진 (범위 내 ${train.inRangeCount}개 열차 모두 매진). 재조회 중...`);
+        log(`${prefix} 매진 (조회된 ${train.candidateCount}개 열차 모두 매진). 재조회 중...`);
         await pollDelay();
         await session.requery();
         continue;

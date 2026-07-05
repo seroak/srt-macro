@@ -120,7 +120,7 @@ export function startServer(opts: StartServerOptions = {}): Server {
       req.on("end", () => {
         const p = JSON.parse(body) as {
           dep: string; arr: string; date: string; time: string;
-          from: string; to: string; seat: string; go: boolean;
+          seat: string; go: boolean;
         };
 
         if (currentProcess) killCurrent();
@@ -128,7 +128,7 @@ export function startServer(opts: StartServerOptions = {}): Server {
         const cliArgs = [
           "--dep", p.dep, "--arr", p.arr,
           "--date", p.date.replace(/-/g, ""), "--time", p.time,
-          "--from", p.from, "--to", p.to, "--seat", p.seat,
+          "--seat", p.seat,
         ];
         if (p.go) cliArgs.push("--go");
 
@@ -220,13 +220,28 @@ export function startServer(opts: StartServerOptions = {}): Server {
     res.end();
   });
 
-  server.listen(PORT, () => {
-    const openUrl = `http://localhost:${PORT}`;
+  // 요청 포트가 이미 사용 중이면 EADDRINUSE로 프로세스 전체가 죽는다(Node 기본 동작) —
+  // 선호 포트를 먼저 시도하고, 막혀 있으면 listen(0)으로 OS가 빈 포트를 원자적으로 배정하게 한다.
+  server.on("listening", () => {
+    const addr = server.address();
+    const actualPort = addr && typeof addr === "object" ? addr.port : PORT;
+    const openUrl = `http://localhost:${actualPort}`;
     console.log(`[API] ${openUrl}${IS_SERVE ? " (serve 모드)" : ""}`);
     if (openBrowser) {
       setTimeout(() => exec(`open ${IS_SERVE ? openUrl : "http://localhost:3002"}`), 2000);
     }
   });
+
+  server.once("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EADDRINUSE") {
+      console.log(`[API] 포트 ${PORT} 사용 중 — 빈 포트 자동 배정`);
+      server.listen(0);
+      return;
+    }
+    throw err;
+  });
+
+  server.listen(PORT);
 
   return server;
 }

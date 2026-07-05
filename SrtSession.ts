@@ -9,8 +9,6 @@ import {
   ARR,
   DATE,
   TIME,
-  TRAIN_FROM,
-  TRAIN_TO,
   SEAT_CLASSES,
   MODE,
 } from "./config.ts";
@@ -181,15 +179,13 @@ export class SrtSession {
 
   // ─── 결과에서 목표 열차 탐지 ────────────────────────────────────────────
   /**
-   * 결과 테이블을 파싱해 [TRAIN_FROM ~ TRAIN_TO] 범위 내 좌석 상태 반환.
-   * - 범위 내 잔여석 열차 발견 → 해당 열차 반환 (seatAvailable: true)
-   * - 범위 내 열차 있지만 전부 매진 → 첫 번째 열차 반환 (seatAvailable: false)
-   * - 범위 내 열차 없음 → null
+   * 결과 테이블을 조회 기준 시각(TIME) 이후 위에서부터 스캔해 좌석 상태 반환.
+   * - 잔여석 열차 발견 → 해당 열차 반환 (seatAvailable: true, 가장 이른 열차 우선)
+   * - 열차는 있지만 전부 매진 → 첫 번째 열차 반환 (seatAvailable: false)
+   * - 결과 테이블에 열차 없음 → null
    */
   async findTargetTrain(): Promise<TrainInfo | null> {
     return this.page.evaluate(selectTargetTrain, {
-      fromTime: TRAIN_FROM,
-      toTime: TRAIN_TO,
       seatClasses: SEAT_CLASSES,
     });
   }
