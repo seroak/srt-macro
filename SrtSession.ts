@@ -9,11 +9,15 @@ import {
   ARR,
   DATE,
   TIME,
+  TARGET_TIME,
+  TARGET_END_TIME,
   SEAT_CLASSES,
   MODE,
 } from "./config.ts";
-import { log, sleep, waitEnter } from "./utils.ts";
+import { log, sleep } from "./utils.ts";
 import { selectTargetTrain, type TrainSelectResult } from "./trainSelect.ts";
+import { isSrtLoginCompleteUrl } from "./loginRedirect.ts";
+import { runAndWaitForNavigation } from "./navigation.ts";
 
 // ─── 검색 결과 열차 정보 ────────────────────────────────────────────────────
 /** trainSelect.ts의 selectTargetTrain() 반환 타입 재-export (기존 호출부 호환용) */
@@ -121,9 +125,15 @@ export class SrtSession {
   private async doLogin(): Promise<void> {
     log("로그인 페이지로 이동...");
     await this.page.goto(SRT_LOGIN_URL, { waitUntil: "domcontentloaded" });
-    await waitEnter("브라우저에서 SRT 로그인 완료 후 Enter > ");
+    log("브라우저에서 SRT 로그인 진행 중 — 완료되면 자동으로 계속합니다.");
+    if (!isSrtLoginCompleteUrl(this.page.url())) {
+      await this.page.waitForURL(
+        (url) => isSrtLoginCompleteUrl(url.href),
+        { waitUntil: "domcontentloaded", timeout: 0 },
+      );
+    }
 
-    log("로그인 완료 — 조회 페이지 재진입 중...");
+    log("로그인 완료 감지 — 조회 페이지 재진입 중...");
     await this.page.goto(SRT_SEARCH_URL, { waitUntil: "domcontentloaded" });
     await sleep(800);
 
@@ -171,15 +181,14 @@ export class SrtSession {
 
     // 조회하기 버튼 클릭
     const searchBtn = this.page.locator('button:has-text("조회하기"), input[value="조회하기"]').first();
-    await searchBtn.click();
-    await this.page.waitForLoadState("domcontentloaded");
+    await runAndWaitForNavigation(this.page, () => searchBtn.click());
     await this.page.waitForSelector("table tbody tr", { timeout: 10_000 }).catch(() => {});
     log("조회 완료 — 결과 테이블 로드됨");
   }
 
   // ─── 결과에서 목표 열차 탐지 ────────────────────────────────────────────
   /**
-   * 결과 테이블을 조회 기준 시각(TIME) 이후 위에서부터 스캔해 좌석 상태 반환.
+   * 결과 테이블에서 TARGET_TIME~TARGET_END_TIME 열차를 위에서부터 스캔해 좌석 상태 반환.
    * - 잔여석 열차 발견 → 해당 열차 반환 (seatAvailable: true, 가장 이른 열차 우선)
    * - 열차는 있지만 전부 매진 → 첫 번째 열차 반환 (seatAvailable: false)
    * - 결과 테이블에 열차 없음 → null
@@ -187,14 +196,15 @@ export class SrtSession {
   async findTargetTrain(): Promise<TrainInfo | null> {
     return this.page.evaluate(selectTargetTrain, {
       seatClasses: SEAT_CLASSES,
+      minDepTime: TARGET_TIME,
+      maxDepTime: TARGET_END_TIME,
     });
   }
 
   // ─── 재조회 (결과 페이지에서 조회하기 버튼 재클릭) ──────────────────────
   async requery(): Promise<void> {
     const btn = this.page.locator('button:has-text("조회하기"), input[value="조회하기"]').first();
-    await btn.click();
-    await this.page.waitForLoadState("domcontentloaded");
+    await runAndWaitForNavigation(this.page, () => btn.click());
     await this.page.waitForSelector("table tbody tr", { timeout: 10_000 }).catch(() => {});
   }
 

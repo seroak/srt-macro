@@ -62,22 +62,42 @@ export default function ConfigForm({ config, set, validate, status, waitingEnter
 
       <div className={styles.section}>
         <p className={styles.sectionLabel}>일정</p>
+        <label className={styles.field}>
+          <span>탑승일</span>
+          <input
+            type="date"
+            value={config.date}
+            min={new Date().toISOString().slice(0, 10)}
+            onChange={e => set("date", e.target.value)}
+            disabled={running}
+          />
+        </label>
+        <label className={styles.field}>
+          <span>조회 기준 시각</span>
+          <select value={config.time} onChange={e => set("time", e.target.value)} disabled={running}>
+            {TIMES.map(t => <option key={t} value={t}>{t}시 이후</option>)}
+          </select>
+        </label>
         <div className={styles.row2}>
           <label className={styles.field}>
-            <span>탑승일</span>
+            <span>예매 탐색 시작</span>
             <input
-              type="date"
-              value={config.date}
-              min={new Date().toISOString().slice(0, 10)}
-              onChange={e => set("date", e.target.value)}
+              type="time"
+              value={config.targetTime}
+              step="60"
+              onChange={e => set("targetTime", e.target.value)}
               disabled={running}
             />
           </label>
           <label className={styles.field}>
-            <span>조회 기준 시각</span>
-            <select value={config.time} onChange={e => set("time", e.target.value)} disabled={running}>
-              {TIMES.map(t => <option key={t} value={t}>{t}시 이후</option>)}
-            </select>
+            <span>예매 탐색 끝</span>
+            <input
+              type="time"
+              value={config.targetEndTime}
+              step="60"
+              onChange={e => set("targetEndTime", e.target.value)}
+              disabled={running}
+            />
           </label>
         </div>
       </div>
@@ -130,9 +150,9 @@ export default function ConfigForm({ config, set, validate, status, waitingEnter
         className={`${styles.btnEnter} ${waitingEnter ? styles.btnEnterHighlight : ""}`}
         onClick={onEnter}
         disabled={!running}
-        title="로그인 완료 후 또는 결제 완료 후 Enter 전송"
+        title="결제 완료 후 매크로에 Enter 전송"
       >
-        ↵ Enter 전송 {waitingEnter ? "— 입력 대기 중" : "(로그인 완료 / 결제 완료)"}
+        ↵ Enter 전송 {waitingEnter ? "— 입력 대기 중" : "(결제 완료 후)"}
       </button>
 
       <hr className={styles.divider} />

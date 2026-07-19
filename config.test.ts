@@ -5,7 +5,12 @@
  */
 import { describe, it, mock, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { daysUntil, parseSeatClasses } from "./config.ts";
+import {
+  daysUntil,
+  parseSeatClasses,
+  resolveTargetEndTime,
+  resolveTargetTime,
+} from "./config.ts";
 
 function yyyymmdd(date: Date): string {
   const y = date.getFullYear();
@@ -74,5 +79,61 @@ describe("parseSeatClasses()", () => {
 
   it("연속 콤마의 빈 항목 제거", () => {
     assert.deepEqual(parseSeatClasses("일반실,,특실"), ["일반실", "특실"]);
+  });
+});
+
+describe("resolveTargetTime()", () => {
+  it("옵션 생략 시 조회 기준 시각의 정각을 사용한다", () => {
+    assert.equal(resolveTargetTime("14", ""), "14:00");
+  });
+
+  it("유효한 탐색 시작 시각을 그대로 반환한다", () => {
+    assert.equal(resolveTargetTime("14", "15:30"), "15:30");
+  });
+
+  it("HH:mm 형식이 아니면 거부한다", () => {
+    assert.throws(
+      () => resolveTargetTime("14", "15"),
+      /예매 탐색 시작 시각 형식 오류/,
+    );
+    assert.throws(
+      () => resolveTargetTime("14", "24:00"),
+      /예매 탐색 시작 시각 형식 오류/,
+    );
+  });
+
+  it("탐색 시작 시각이 조회 기준 시각보다 빠르면 거부한다", () => {
+    assert.throws(
+      () => resolveTargetTime("14", "13:59"),
+      /조회 기준 시각\(14:00\)보다 빠를 수 없습니다/,
+    );
+  });
+});
+
+describe("resolveTargetEndTime()", () => {
+  it("옵션 생략 시 23:59를 사용한다", () => {
+    assert.equal(resolveTargetEndTime("15:00", ""), "23:59");
+  });
+
+  it("유효한 탐색 끝 시각을 그대로 반환한다", () => {
+    assert.equal(resolveTargetEndTime("15:00", "17:30"), "17:30");
+  });
+
+  it("HH:mm 형식이 아니면 거부한다", () => {
+    assert.throws(
+      () => resolveTargetEndTime("15:00", "17"),
+      /예매 탐색 끝 시각 형식 오류/,
+    );
+    assert.throws(
+      () => resolveTargetEndTime("15:00", "24:00"),
+      /예매 탐색 끝 시각 형식 오류/,
+    );
+  });
+
+  it("탐색 끝 시각이 시작 시각보다 빠르면 거부한다", () => {
+    assert.throws(
+      () => resolveTargetEndTime("15:00", "14:59"),
+      /탐색 시작 시각\(15:00\)보다 빠를 수 없습니다/,
+    );
   });
 });

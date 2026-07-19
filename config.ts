@@ -5,6 +5,8 @@
  *   tsx srt/run_srt.ts --dep 수서 --arr 부산 --date 20260710 --time 06 --seat 일반실
  *   tsx srt/run_srt.ts --dep 수서 --arr 부산 --date 20260710 --time 14 --seat 특실 --go
  *   tsx srt/run_srt.ts --dep 수서 --arr 부산 --date 20260710 --time 14 --seat 일반실,특실 --go
+ *   tsx srt/run_srt.ts --dep 수서 --arr 부산 --date 20260710 --time 14 --target-time 15:00 --seat 일반실 --go
+ *   tsx srt/run_srt.ts --dep 수서 --arr 부산 --date 20260710 --time 14 --target-time 15:00 --target-end-time 17:00 --seat 일반실 --go
  */
 
 import { join } from "path";
@@ -90,6 +92,57 @@ export const DATE = getArg("--date");
  * SRT 폼 제출 value: "060000" 형태 — 내부 변환은 SrtSession에서 처리
  */
 export const TIME = getArg("--time", "06");
+
+/**
+ * 예매 탐색 시작 시각을 HH:mm으로 정규화하고 조회 기준 시각과의 관계를 검증한다.
+ * 옵션을 생략하면 기존 동작과 동일하게 조회 기준 시각의 정각부터 탐색한다.
+ */
+export function resolveTargetTime(queryTime: string, rawTargetTime = ""): string {
+  const queryHour = queryTime.padStart(2, "0");
+  const targetTime = rawTargetTime || `${queryHour}:00`;
+
+  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(targetTime)) {
+    throw new Error(
+      `예매 탐색 시작 시각 형식 오류: "${targetTime}" — HH:mm 형식으로 입력하세요 (예: 15:00)`,
+    );
+  }
+
+  const [targetHour, targetMinute] = targetTime.split(":").map(Number);
+  const queryMinutes = Number(queryHour) * 60;
+  const targetMinutes = targetHour * 60 + targetMinute;
+  if (targetMinutes < queryMinutes) {
+    throw new Error(
+      `예매 탐색 시작 시각(${targetTime})은 조회 기준 시각(${queryHour}:00)보다 빠를 수 없습니다.`,
+    );
+  }
+
+  return targetTime;
+}
+
+/** 결과 목록에서 실제 좌석·예약대기 탐색을 시작할 출발시각(HH:mm) */
+export const TARGET_TIME = resolveTargetTime(TIME, getArg("--target-time"));
+
+/** 탐색 끝 시각을 HH:mm으로 검증하고 시작 시각 이후인지 확인한다. */
+export function resolveTargetEndTime(targetTime: string, rawEndTime = ""): string {
+  const endTime = rawEndTime || "23:59";
+  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(endTime)) {
+    throw new Error(
+      `예매 탐색 끝 시각 형식 오류: "${endTime}" — HH:mm 형식으로 입력하세요 (예: 17:00)`,
+    );
+  }
+  if (endTime < targetTime) {
+    throw new Error(
+      `예매 탐색 끝 시각(${endTime})은 탐색 시작 시각(${targetTime})보다 빠를 수 없습니다.`,
+    );
+  }
+  return endTime;
+}
+
+/** 결과 목록에서 실제 좌석·예약대기 탐색을 끝낼 출발시각(HH:mm, 경계 포함) */
+export const TARGET_END_TIME = resolveTargetEndTime(
+  TARGET_TIME,
+  getArg("--target-end-time"),
+);
 
 /**
  * 좌석 등급: "일반실" (기본), "특실", "입석+좌석"

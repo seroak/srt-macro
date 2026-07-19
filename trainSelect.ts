@@ -10,6 +10,10 @@
 export interface SeatSelectOpts {
   /** 감시할 좌석 등급 목록 (우선순위 = 배열 순서) */
   seatClasses: string[];
+  /** 예매 탐색 대상에 포함할 최소 출발시각 (HH:mm, 경계 포함) */
+  minDepTime: string;
+  /** 예매 탐색 대상에 포함할 최대 출발시각 (HH:mm, 경계 포함) */
+  maxDepTime: string;
 }
 
 export interface TrainSelectResult {
@@ -31,7 +35,7 @@ export interface TrainSelectResult {
 }
 
 /**
- * 결과 테이블을 위에서부터(=조회 기준 시각 이후 가장 이른 순) 스캔해 좌석 상태 반환.
+ * 결과 테이블에서 minDepTime 이상 maxDepTime 이하인 열차를 위에서부터 스캔해 좌석 상태 반환.
  * - 잔여석 열차 발견 → 해당 열차 반환 (seatAvailable: true, 가장 이른 열차 우선)
  * - 열차는 있지만 전부 매진 → 첫 번째 열차 반환 (seatAvailable: false)
  * - 결과 테이블에 열차 없음 → null
@@ -42,7 +46,15 @@ export interface TrainSelectResult {
 // .toString()으로 직렬화해 브라우저에 보낼 때 "__name is not defined"로 깨진다.
 // 그래서 컬럼 인덱스/입석 여부 판별은 지역 함수로 추출하지 않고 인라인 표현식으로 둔다.
 export function selectTargetTrain(opts: SeatSelectOpts): TrainSelectResult | null {
-  const { seatClasses } = opts;
+  const { seatClasses, minDepTime, maxDepTime } = opts;
+  const minMatch = /^(\d{2}):(\d{2})$/.exec(minDepTime);
+  const minMinutes = minMatch
+    ? Number(minMatch[1]) * 60 + Number(minMatch[2])
+    : 0;
+  const maxMatch = /^(\d{2}):(\d{2})$/.exec(maxDepTime);
+  const maxMinutes = maxMatch
+    ? Number(maxMatch[1]) * 60 + Number(maxMatch[2])
+    : 23 * 60 + 59;
 
   const rows = document.querySelectorAll("table tbody tr");
   let firstCandidate: TrainSelectResult | null = null;
@@ -55,6 +67,11 @@ export function selectTargetTrain(opts: SeatSelectOpts): TrainSelectResult | nul
     const trainNo = tds[2].innerText?.trim() ?? "";
     const depTime = (tds[3].querySelector("em.time") as HTMLElement | null)?.innerText?.trim() ?? "";
     const arrTime = (tds[4].querySelector("em.time") as HTMLElement | null)?.innerText?.trim() ?? "";
+
+    const depMatch = /^(\d{2}):(\d{2})$/.exec(depTime);
+    if (!depMatch) continue;
+    const depMinutes = Number(depMatch[1]) * 60 + Number(depMatch[2]);
+    if (depMinutes < minMinutes || depMinutes > maxMinutes) continue;
 
     candidateCount++;
 

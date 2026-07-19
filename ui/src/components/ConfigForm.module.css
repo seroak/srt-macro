@@ -32,7 +32,8 @@
 
 .field select,
 .field input[type="text"],
-.field input[type="date"] {
+.field input[type="date"],
+.field input[type="time"] {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);

@@ -10,6 +10,9 @@ release/
 discord_webhook.txt
 srt_session.json
 
+# Dev-only port coordination (ui.ts <-> vite proxy)
+.ui-port
+
 # System Files
 .DS_Store
 Thumbs.db

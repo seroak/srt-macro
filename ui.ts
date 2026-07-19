@@ -11,11 +11,12 @@
 import { createServer, type Server } from "http";
 import { spawn, exec, type ChildProcess } from "child_process";
 import { EventEmitter } from "events";
-import { createReadStream, existsSync } from "fs";
+import { createReadStream, existsSync, writeFileSync, unlinkSync } from "fs";
 import { join, extname } from "path";
 import { fileURLToPath } from "url";
 import { isDiscordConfigured, sendDiscordTest } from "./discord.ts";
 import { saveWebhookUrl } from "./webhookConfig.ts";
+import { buildMacroCliArgs, type StartMacroPayload } from "./macroArgs.ts";
 
 const DEFAULT_PORT = 3001;
 
@@ -62,6 +63,13 @@ export interface StartServerOptions {
    * 반드시 명시적으로 true를 넘겨야 한다.
    */
   isServe?: boolean;
+  /**
+   * 실제로 바인딩된 포트를 기록할 파일 경로 (선호 포트가 이미 사용 중이어서
+   * listen(0)으로 랜덤 포트에 뜬 경우, vite dev 서버의 프록시가 이 파일을 읽어
+   * 실제 포트를 찾아가게 한다). CLI 단독 실행(dev 모드)에서만 지정 — Electron/serve
+   * 모드는 단일 서버라 프록시 자체가 없으므로 불필요.
+   */
+  portFile?: string;
 }
 
 // ── 프로세스 상태 ─────────────────────────────────────────────────────────────
@@ -118,19 +126,11 @@ export function startServer(opts: StartServerOptions = {}): Server {
       let body = "";
       req.on("data", c => body += c);
       req.on("end", () => {
-        const p = JSON.parse(body) as {
-          dep: string; arr: string; date: string; time: string;
-          seat: string; go: boolean;
-        };
+        const p = JSON.parse(body) as StartMacroPayload;
 
         if (currentProcess) killCurrent();
 
-        const cliArgs = [
-          "--dep", p.dep, "--arr", p.arr,
-          "--date", p.date.replace(/-/g, ""), "--time", p.time,
-          "--seat", p.seat,
-        ];
-        if (p.go) cliArgs.push("--go");
+        const cliArgs = buildMacroCliArgs(p);
 
         broadcast("log", `[UI] 매크로 실행: ${cliArgs.join(" ")}`);
 
@@ -227,8 +227,21 @@ export function startServer(opts: StartServerOptions = {}): Server {
     const actualPort = addr && typeof addr === "object" ? addr.port : PORT;
     const openUrl = `http://localhost:${actualPort}`;
     console.log(`[API] ${openUrl}${IS_SERVE ? " (serve 모드)" : ""}`);
-    if (openBrowser) {
-      setTimeout(() => exec(`open ${IS_SERVE ? openUrl : "http://localhost:3002"}`), 2000);
+
+    if (opts.portFile) {
+      writeFileSync(opts.portFile, String(actualPort));
+      const cleanup = () => {
+        try { unlinkSync(opts.portFile!); } catch { /* 이미 없으면 무시 */ }
+      };
+      process.once("exit", cleanup);
+      process.once("SIGINT", () => { cleanup(); process.exit(); });
+      process.once("SIGTERM", () => { cleanup(); process.exit(); });
+    }
+
+    // dev 모드(vite 프록시)는 vite의 server.open이 자체 포트로 여는 걸 담당하므로
+    // 여기서는 serve 모드(단일 서버)일 때만 실제 바인딩된 URL을 연다.
+    if (openBrowser && IS_SERVE) {
+      setTimeout(() => exec(`open ${openUrl}`), 2000);
     }
   });
 
@@ -253,5 +266,5 @@ function isMainModule(): boolean {
 }
 
 if (isMainModule()) {
-  startServer();
+  startServer({ portFile: join(import.meta.dirname, ".ui-port") });
 }

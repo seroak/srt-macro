@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import type { Config } from "../types.ts";
+import { buildConfig, setQueryTime, validateConfig } from "../configState.ts";
 
 const STORAGE_KEY = "srt-ui-config";
 
@@ -10,17 +11,10 @@ function todayStr() {
 function loadSaved(): Config {
   const today = todayStr();
   try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}");
-    return {
-      dep:  saved.dep  ?? "수서",
-      arr:  saved.arr  ?? "부산",
-      date: (saved.date && saved.date >= today) ? saved.date : today,
-      time: saved.time ?? "06",
-      seat: saved.seat ?? "일반실",
-      go:   saved.go   ?? false,
-    };
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}") as Partial<Config>;
+    return buildConfig(saved, today);
   } catch {
-    return { dep: "수서", arr: "부산", date: today, time: "06", seat: "일반실", go: false };
+    return buildConfig({}, today);
   }
 }
 
@@ -32,14 +26,11 @@ export function useConfig() {
   }, [config]);
 
   const set = <K extends keyof Config>(key: K, value: Config[K]) =>
-    setConfig(prev => ({ ...prev, [key]: value }));
+    setConfig(prev => key === "time"
+      ? setQueryTime(prev, value as string)
+      : { ...prev, [key]: value });
 
-  const validate = (): string | null => {
-    if (!config.date) return "탑승일을 선택하세요.";
-    if (config.date < todayStr()) return "과거 날짜는 선택할 수 없습니다.";
-    if (!config.seat) return "좌석 등급을 하나 이상 선택하세요.";
-    return null;
-  };
+  const validate = (): string | null => validateConfig(config, todayStr());
 
   return { config, set, validate };
 }
