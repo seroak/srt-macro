@@ -10,7 +10,7 @@
     "ui": "concurrently \"tsx ui.ts\" \"vite --config ui/vite.config.ts\"",
     "ui:build": "vite build --config ui/vite.config.ts",
     "ui:serve": "cross-env NODE_ENV=production tsx ui.ts",
-    "test": "tsx --test config.test.ts loginRedirect.test.ts navigation.test.ts uiStart.test.ts ui/vite.config.test.ts ui/src/configState.test.ts ui/src/seatSelection.test.ts",
+    "test": "tsx --test config.test.ts loginRedirect.test.ts navigation.test.ts paymentApproval.test.ts paymentDeadline.test.ts payMethod.test.ts trainInfoFormat.test.ts uiStart.test.ts ui/vite.config.test.ts ui/src/configState.test.ts ui/src/seatSelection.test.ts",
     "test:browser": "tsx --test trainSelect.browser.test.ts",
     "electron:main:build": "esbuild electron/main.ts --bundle --platform=node --format=esm --external:electron --outfile=dist-electron/main.mjs",
     "electron:macro:build": "esbuild run_srt.ts --bundle --platform=node --format=esm --external:playwright --external:node-notifier --outfile=dist-electron/macro.mjs",

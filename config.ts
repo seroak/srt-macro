@@ -21,6 +21,15 @@ export const SRT_SESSION_FILE = SRT_DATA_DIR
   ? join(SRT_DATA_DIR, "srt_session.json")
   : "./srt_session.json";
 
+/**
+ * 결제 확인 팝업 승인 신호 파일 경로 (PaymentFlow / paymentApproval.ts).
+ * 이 파일이 생성되면 결제 확인 dialog를 승인 처리한다 — 채팅에서 사람이 실제로
+ * 확인한 뒤에만 생성해야 한다. 세션 파일과 동일한 위치 규칙(Electron/CLI)을 따른다.
+ */
+export const SRT_PAYMENT_APPROVE_FILE = SRT_DATA_DIR
+  ? join(SRT_DATA_DIR, "srt_payment_approve")
+  : "./srt_payment_approve";
+
 export const SRT_SEARCH_URL =
   "https://etk.srail.kr/hpg/hra/01/selectScheduleList.do?pageId=TK0101010000";
 
@@ -189,6 +198,21 @@ export const WAIT_SPECIAL = argv.includes("--wait-special");
  * --force-poll: D-2 이상이어도 취소표 폴링 모드 강제 (테스트/예외용)
  */
 const FORCE_POLL = argv.includes("--force-poll");
+
+// ─── 결제수단 선택 옵션 (PaymentFlow.ts) ────────────────────────────────────
+/**
+ * --pay-tab 신용카드|간편결제|계좌이체|포인트|레일리지 (기본: 간편결제)
+ * 셀렉터 변환은 payMethod.ts의 resolvePayTabSelector()가 담당 — 잘못된 값은
+ * PaymentFlow 실행 시점에 에러. 기존(신용카드 고정) 동작이 필요하면 --pay-tab 신용카드.
+ */
+export const PAY_TAB = getArg("--pay-tab", "간편결제");
+
+/**
+ * --easy-pay 내통장결제|네이버페이|페이코|카카오페이 (기본: 미지정 — 화면 기본 선택 유지)
+ * PAY_TAB이 "간편결제"일 때만 의미가 있다. 셀렉터 변환은 payMethod.ts의
+ * resolveEasyPaySelector() 담당.
+ */
+export const EASY_PAY = getArg("--easy-pay") || undefined;
 
 /**
  * 실행 모드:

@@ -1,8 +1,10 @@
 import notifier from "node-notifier";
 import { type Page } from "playwright";
-import { DEP, ARR, TARGET_TIME, TARGET_END_TIME } from "./config.ts";
+import { DEP, ARR } from "./config.ts";
 import { log, sleep, waitEnter } from "./utils.ts";
 import { sendDiscord } from "./discord.ts";
+import { PaymentFlow } from "./PaymentFlow.ts";
+import { formatTrainInfo, type CaughtTrain } from "./trainInfoFormat.ts";
 
 /**
  * BookingFlow — checkUserInfo.do 이후 예약 완료까지 자동 처리.
@@ -16,10 +18,10 @@ import { sendDiscord } from "./discord.ts";
  * handle()만 public.
  */
 export class BookingFlow {
-  /** @param seatLabel 실제로 확보된 좌석 등급 (복수 등급 감시 시 매칭된 등급) */
+  /** @param train 실제로 확보된 열차 정보 (trainNo/depTime/arrTime/matchedSeat) */
   constructor(
     private readonly page: Page,
-    private readonly seatLabel: string,
+    private readonly train: CaughtTrain,
   ) {}
 
   async handle(): Promise<void> {
@@ -39,8 +41,7 @@ export class BookingFlow {
     if (this.isReservationConfirmPage(url)) {
       log("예약 확인 페이지 도달 — 좌석 확보! 디스코드 알림 발송");
       this.notify();
-      log("결제 페이지로 진행하세요. 10분 내 결제 필요.");
-      await waitEnter("결제 완료 후 Enter > ");
+      await new PaymentFlow(this.page, this.train).handle();
       return;
     }
 
@@ -180,7 +181,7 @@ export class BookingFlow {
 
   // ─── OS 알림 + 소리 + Discord ────────────────────────────────────────
   private notify(): void {
-    const trainInfo = `${DEP}→${ARR} ${TARGET_TIME}~${TARGET_END_TIME} ${this.seatLabel}`;
+    const trainInfo = formatTrainInfo(DEP, ARR, this.train);
     const msg = `SRT 좌석 확보! ${trainInfo} — 결제 진행하세요`;
 
     console.log("\n");

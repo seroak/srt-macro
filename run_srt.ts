@@ -18,9 +18,11 @@
  *   --seat      좌석 등급 일반실|특실  (기본: 일반실, 콤마로 복수 지정 가능: 일반실,특실)
  *   --interval  폴링 간격 ms (기본: 0 = 800~1500ms 랜덤)
  *   --go        예약 실전 실행 플래그 (없으면 dry-run)
+ *   --pay-tab   결제수단 탭 신용카드|간편결제|계좌이체|포인트|레일리지 (기본: 간편결제)
+ *   --easy-pay  간편결제 수단 내통장결제|네이버페이|페이코|카카오페이 (기본: 미지정, 화면 기본값 유지)
  */
 
-import { GO, DEP, ARR, DATE, TIME, TARGET_TIME, TARGET_END_TIME, SEAT_LABEL, INTERVAL, MODE, daysUntil, SMS_AGREE, WAIT_SPECIAL } from "./config.ts";
+import { GO, DEP, ARR, DATE, TIME, TARGET_TIME, TARGET_END_TIME, SEAT_LABEL, INTERVAL, MODE, daysUntil, SMS_AGREE, WAIT_SPECIAL, PAY_TAB, EASY_PAY } from "./config.ts";
 import { log, sleep, randomDelay, closeRl } from "./utils.ts";
 import { SrtSession } from "./SrtSession.ts";
 import { BookingFlow } from "./BookingFlow.ts";
@@ -47,6 +49,8 @@ async function main() {
   if (MODE === "WAITLIST") {
     console.log(`  SMS동의 : ${SMS_AGREE ? "예" : "아니오"}`);
     console.log(`  특실배정: ${WAIT_SPECIAL ? "수락" : "거부"}`);
+  } else {
+    console.log(`  결제탭  : ${PAY_TAB}${EASY_PAY ? ` (${EASY_PAY})` : ""}`);
   }
   if (INTERVAL > 0) console.log(`  간격    : ${INTERVAL}ms 고정`);
   console.log("══════════════════════════════════════════════\n");
@@ -91,7 +95,7 @@ async function main() {
           break;
         }
         const bookingPage = await session.clickReserve(train.rowIndex, train.matchedSeat);
-        await new BookingFlow(bookingPage, train.matchedSeat).handle();
+        await new BookingFlow(bookingPage, train).handle();
         break;
       }
 
@@ -103,7 +107,7 @@ async function main() {
         }
         log("예약대기 신청 클릭 실행!");
         const waitlistPage = await session.clickWaitlist(train.rowIndex, train.matchedSeat);
-        await new WaitlistFlow(waitlistPage, train.matchedSeat).handle();
+        await new WaitlistFlow(waitlistPage, train).handle();
         break;
       }
 
@@ -145,7 +149,7 @@ async function main() {
 
       log("예약하기 클릭 실행!");
       const bookingPage = await session.clickReserve(train.rowIndex, train.matchedSeat);
-      await new BookingFlow(bookingPage, train.matchedSeat).handle();
+      await new BookingFlow(bookingPage, train).handle();
       break;
     }
   }

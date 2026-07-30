@@ -1,8 +1,9 @@
 import notifier from "node-notifier";
 import { type Page } from "playwright";
-import { DEP, ARR, TARGET_TIME, TARGET_END_TIME, SMS_AGREE, WAIT_SPECIAL } from "./config.ts";
+import { DEP, ARR, SMS_AGREE, WAIT_SPECIAL } from "./config.ts";
 import { log, sleep, waitEnter } from "./utils.ts";
 import { sendDiscord } from "./discord.ts";
+import { formatTrainInfo, type CaughtTrain } from "./trainInfoFormat.ts";
 
 /**
  * WaitlistFlow — 예약대기 신청 페이지 처리.
@@ -17,10 +18,10 @@ import { sendDiscord } from "./discord.ts";
  * handle()만 public.
  */
 export class WaitlistFlow {
-  /** @param seatLabel 실제로 예약대기 신청된 좌석 등급 (복수 등급 감시 시 매칭된 등급) */
+  /** @param train 실제로 예약대기 신청된 열차 정보 (trainNo/depTime/arrTime/matchedSeat) */
   constructor(
     private readonly page: Page,
-    private readonly seatLabel: string,
+    private readonly train: CaughtTrain,
   ) {}
 
   async handle(): Promise<void> {
@@ -83,7 +84,7 @@ export class WaitlistFlow {
     // ── 특실 취소표 배정 여부 ────────────────────────────────────────────
     // 일반실로 예약대기 신청했을 때만 유의미 (특실 자체를 신청했으면 불필요)
     // TODO: 실제 셀렉터는 라이브 확인 후 교체
-    if (this.seatLabel === "일반실") {
+    if (this.train.matchedSeat === "일반실") {
       const specialCandidates = [
         "#spcSeatYn",
         'input[name="spcSeatYn"]',
@@ -175,7 +176,7 @@ export class WaitlistFlow {
 
   // ─── OS 알림 + 소리 + Discord ────────────────────────────────────────
   private notify(rank: string): void {
-    const trainInfo = `${DEP}→${ARR} ${TARGET_TIME}~${TARGET_END_TIME} ${this.seatLabel}`;
+    const trainInfo = formatTrainInfo(DEP, ARR, this.train);
     const msg = `SRT 예약대기 ${rank}번 신청 완료! ${trainInfo} — 내일 오전 9시 배정 안내`;
 
     console.log("\n");

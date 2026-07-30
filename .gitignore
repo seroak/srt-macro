@@ -9,6 +9,10 @@ release/
 .env
 discord_webhook.txt
 srt_session.json
+srt_payment_approve
+
+# 결제 화면 라이브 캡처 (이름·전화번호 등 개인정보 포함 — 버전 관리 대상 아님)
+capture/
 
 # Dev-only port coordination (ui.ts <-> vite proxy)
 .ui-port
