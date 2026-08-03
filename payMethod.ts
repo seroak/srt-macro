@@ -50,3 +50,16 @@ export function resolveEasyPaySelector(name: string | undefined): string | undef
   }
   return selector;
 }
+
+/**
+ * --pay-tab/--easy-pay 조합을 한 번에 검증한다. 잘못되면 즉시 throw.
+ *
+ * PaymentFlow.selectPayMethod()도 결제 화면에서 동일 검증을 수행하지만, 그 시점은
+ * 이미 좌석을 확보(10분 임시확보)한 뒤라 여기서 throw하면 프로세스가 죽으며
+ * 브라우저가 닫혀 좌석이 유실된다. run_srt.ts는 세션 생성 전에 이 함수를 호출해
+ * 오타를 좌석 확보 이전에 fail-fast 시켜야 한다.
+ */
+export function validatePaymentSelection(payTab: string, easyPay: string | undefined): void {
+  resolvePayTabSelector(payTab);
+  resolveEasyPaySelector(easyPay);
+}

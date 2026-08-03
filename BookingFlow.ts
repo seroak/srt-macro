@@ -1,9 +1,10 @@
 import notifier from "node-notifier";
 import { type Page } from "playwright";
-import { DEP, ARR } from "./config.ts";
+import { DEP, ARR, SRT_PAYMENT_APPROVE_FILE } from "./config.ts";
 import { log, sleep, waitEnter } from "./utils.ts";
 import { sendDiscord } from "./discord.ts";
 import { PaymentFlow } from "./PaymentFlow.ts";
+import { armPaymentApprovalGate } from "./paymentApproval.ts";
 import { formatTrainInfo, type CaughtTrain } from "./trainInfoFormat.ts";
 
 /**
@@ -75,9 +76,13 @@ export class BookingFlow {
     }
 
     // ── 이미 결제 페이지에 도달한 경우 ───────────────────────────────────
+    // PaymentFlow.handle()을 거치지 않은 경로라 전역 auto-accept dialog 핸들러가
+    // 아직 살아있다 — 사람에게 넘기기 전에 반드시 승인 게이트로 교체한다.
     if (this.isPaymentPage(url)) {
+      armPaymentApprovalGate(this.page, SRT_PAYMENT_APPROVE_FILE);
       this.notify();
       log("결제 페이지 도달 완료. 10분 내 수동 결제를 진행하세요.");
+      log('최종 결제 확인 팝업은 자동으로 승인되지 않습니다 — 채팅에서 확인해야 진행됩니다.');
       await waitEnter("결제 완료 후 Enter > ");
       return;
     }
@@ -89,9 +94,13 @@ export class BookingFlow {
   }
 
   // ─── checkUserInfo.do 에서 예약신청 버튼 자동 클릭 ─────────────────────
-  private async submitConfirmForm(): Promise<boolean> {
-    await sleep(800);
+  // 최대 시도 횟수를 두는 이유: 클릭해도 URL이 안 바뀌는 상황(추가 확인 단계로
+  // 오인)이 반복되면 과거엔 재귀 호출이 무한히 이어졌다 — 셀렉터 후보의
+  // input[type="submit"]/button[type="submit"]처럼 넓은 폴백이 페이지의 엉뚱한
+  // submit 버튼을 계속 클릭하는 경우 특히 위험했다. 이제 유한 횟수 후 사람에게 넘긴다.
+  private static readonly MAX_CONFIRM_ATTEMPTS = 3;
 
+  private async submitConfirmForm(): Promise<boolean> {
     // SRT checkUserInfo 페이지의 예약신청 버튼 후보 셀렉터 (우선순위 순)
     const candidates = [
       'input[value="예약신청"]',
@@ -104,47 +113,64 @@ export class BookingFlow {
       'button[type="submit"]',
     ];
 
-    for (const sel of candidates) {
-      const count = await this.page.locator(sel).count();
-      if (count > 0) {
-        log(`예약 확인 버튼 발견: ${sel}`);
+    for (let attempt = 1; attempt <= BookingFlow.MAX_CONFIRM_ATTEMPTS; attempt++) {
+      await sleep(800);
 
-        const prevUrl = this.page.url();
-        const navPromise = this.page
-          .waitForURL(url => url.href !== prevUrl, { waitUntil: "domcontentloaded", timeout: 15_000 })
-          .catch(() => null);
-
-        await this.page.locator(sel).first().click();
-        await navPromise;
-
-        const nextUrl = this.page.url();
-        log(`예약 확인 후 URL: ${nextUrl}`);
-
-        // URL이 checkUserInfo를 벗어났으면 예약 진행된 것 → 무조건 알림 발송
-        if (!nextUrl.includes("checkUserInfo") && !nextUrl.includes("TK0101011")) {
-          this.notify();
-          if (this.isPaymentPage(nextUrl)) {
-            log("결제 페이지 도달! 10분 내 수동 결제를 진행하세요.");
-          } else if (this.isReservationCompletePage(nextUrl)) {
-            log("예약 완료! 예매내역에서 결제를 진행하세요.");
-          } else {
-            log(`예약 진행됨 (URL: ${nextUrl}). 브라우저에서 결제를 완료하세요.`);
-          }
-          await waitEnter("완료 후 Enter > ");
-          return true;
+      let matchedSelector: string | null = null;
+      for (const sel of candidates) {
+        if ((await this.page.locator(sel).count()) > 0) {
+          matchedSelector = sel;
+          break;
         }
-
-        // 아직 같은 단계 — 추가 확인 단계 재시도
-        log("추가 확인 단계 감지 — 다시 시도 중...");
-        return this.submitConfirmForm();
       }
+
+      if (!matchedSelector) {
+        log("예약 확인 버튼을 찾지 못했습니다. 현재 페이지 텍스트:");
+        const bodyText = await this.page.evaluate(() =>
+          document.body.innerText.substring(0, 300)
+        );
+        log(bodyText);
+        return false;
+      }
+
+      log(`예약 확인 버튼 발견: ${matchedSelector} (시도 ${attempt}/${BookingFlow.MAX_CONFIRM_ATTEMPTS})`);
+
+      const prevUrl = this.page.url();
+      const navPromise = this.page
+        .waitForURL(url => url.href !== prevUrl, { waitUntil: "domcontentloaded", timeout: 15_000 })
+        .catch(() => null);
+
+      await this.page.locator(matchedSelector).first().click();
+      await navPromise;
+
+      const nextUrl = this.page.url();
+      log(`예약 확인 후 URL: ${nextUrl}`);
+
+      // URL이 checkUserInfo를 벗어났으면 예약 진행된 것 → 무조건 알림 발송
+      if (!nextUrl.includes("checkUserInfo") && !nextUrl.includes("TK0101011")) {
+        // PaymentFlow.handle()을 거치지 않은 경로라 전역 auto-accept dialog 핸들러가
+        // 아직 살아있다 — 결제 페이지라면 사람에게 넘기기 전에 승인 게이트로 교체한다.
+        if (this.isPaymentPage(nextUrl)) {
+          armPaymentApprovalGate(this.page, SRT_PAYMENT_APPROVE_FILE);
+        }
+        this.notify();
+        if (this.isPaymentPage(nextUrl)) {
+          log("결제 페이지 도달! 10분 내 수동 결제를 진행하세요.");
+          log('최종 결제 확인 팝업은 자동으로 승인되지 않습니다 — 채팅에서 확인해야 진행됩니다.');
+        } else if (this.isReservationCompletePage(nextUrl)) {
+          log("예약 완료! 예매내역에서 결제를 진행하세요.");
+        } else {
+          log(`예약 진행됨 (URL: ${nextUrl}). 브라우저에서 결제를 완료하세요.`);
+        }
+        await waitEnter("완료 후 Enter > ");
+        return true;
+      }
+
+      // 아직 같은 단계 — 추가 확인 단계로 보고 재시도
+      log("추가 확인 단계 감지 — 다시 시도 중...");
     }
 
-    log("예약 확인 버튼을 찾지 못했습니다. 현재 페이지 텍스트:");
-    const bodyText = await this.page.evaluate(() =>
-      document.body.innerText.substring(0, 300)
-    );
-    log(bodyText);
+    log(`추가 확인 단계가 ${BookingFlow.MAX_CONFIRM_ATTEMPTS}회 반복돼 자동 처리를 중단합니다 — 브라우저에서 직접 진행하세요.`);
     return false;
   }
 

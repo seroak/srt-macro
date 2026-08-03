@@ -1,9 +1,8 @@
-import { type Page, type Dialog } from "playwright";
-import * as fs from "fs";
+import { type Page } from "playwright";
 import { DEP, ARR, PAY_TAB, EASY_PAY, SRT_PAYMENT_APPROVE_FILE } from "./config.ts";
 import { log, waitEnter } from "./utils.ts";
 import { sendDiscord } from "./discord.ts";
-import { waitForPaymentApproval } from "./paymentApproval.ts";
+import { armPaymentApprovalGate } from "./paymentApproval.ts";
 import { formatTrainInfo, type CaughtTrain } from "./trainInfoFormat.ts";
 import { resolvePayTabSelector, resolveEasyPaySelector } from "./payMethod.ts";
 import { nextDeadlineAlert, PAYMENT_DEADLINE_MS } from "./paymentDeadline.ts";
@@ -23,9 +22,12 @@ import { nextDeadlineAlert, PAYMENT_DEADLINE_MS } from "./paymentDeadline.ts";
  * 안전장치: SrtSession의 전역 dialog 핸들러(모든 confirm/alert을 자동 accept)가
  * 실제 "결제 및 발권하시겠습니까?" 확인창까지 자동 승인해버린 사고가 있었다(2026-07-30).
  * Playwright는 dialog 리스너가 없으면 자동으로 dismiss(사람이 실제 팝업을 클릭할
- * 방법이 없음)하므로, 이 단계부터는 그 전역 핸들러를 제거하고 모든 dialog를
- * paymentApproval.waitForPaymentApproval()로 게이트한다 — 채팅에서 사람이 실제로
- * 확인한 뒤 승인 파일을 생성해야만 진행된다.
+ * 방법이 없음)하므로, 이 단계부터는 paymentApproval.armPaymentApprovalGate()로 그
+ * 전역 핸들러를 제거하고 모든 dialog를 승인 파일 게이트로 전환한다 — 채팅에서
+ * 사람이 실제로 확인한 뒤 승인 파일을 생성해야만 진행된다. BookingFlow.ts도 결제
+ * 페이지에 도달할 수 있는 다른 경로(checkUserInfo 확인 후 등)에서 동일하게
+ * 이 함수를 호출한다 — PaymentFlow.handle()을 거치지 않는 경로가 게이트 없이
+ * 전역 자동승인 상태로 남는 걸 막기 위함.
  *
  * handle()만 public.
  */
@@ -59,7 +61,7 @@ export class PaymentFlow {
 
     await this.selectPayMethod();
 
-    this.armPaymentDialogGate();
+    armPaymentApprovalGate(this.page, SRT_PAYMENT_APPROVE_FILE);
 
     const trainInfo = formatTrainInfo(DEP, ARR, this.train);
     log(`결제 화면 도달 — ${trainInfo}. 카드 정보를 직접 입력하고 "결제 및 발권"을 누르세요.`);
@@ -121,28 +123,6 @@ export class PaymentFlow {
       await radio.click().catch(() => {});
     } else {
       log(`간편결제 수단(${EASY_PAY} → ${easyPaySelector})을 찾지 못함 — 브라우저에서 직접 선택하세요.`);
-    }
-  }
-
-  /** 이 단계부터의 모든 dialog를 승인 파일 게이트로 전환 — 전역 자동승인 핸들러를 대체한다 */
-  private armPaymentDialogGate(): void {
-    this.page.removeAllListeners("dialog");
-    fs.rmSync(SRT_PAYMENT_APPROVE_FILE, { force: true });
-    this.page.on("dialog", (dialog) => {
-      this.gateDialog(dialog).catch((err) => log(`결제 팝업 처리 중 오류: ${err.message}`));
-    });
-  }
-
-  private async gateDialog(dialog: Dialog): Promise<void> {
-    log(`[결제단계 팝업] [${dialog.type()}] ${dialog.message()}`);
-    log(`승인하려면 채팅에서 확인 후 "${SRT_PAYMENT_APPROVE_FILE}" 생성 — 최대 5분 대기`);
-    const approved = await waitForPaymentApproval(SRT_PAYMENT_APPROVE_FILE, 5 * 60_000);
-    if (approved) {
-      log("결제 승인 신호 확인 — 진행");
-      await dialog.accept().catch(() => {});
-    } else {
-      log("5분 내 승인 신호 없음 — 취소 처리");
-      await dialog.dismiss().catch(() => {});
     }
   }
 }

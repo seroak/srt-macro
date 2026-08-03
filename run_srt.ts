@@ -22,14 +22,43 @@
  *   --easy-pay  간편결제 수단 내통장결제|네이버페이|페이코|카카오페이 (기본: 미지정, 화면 기본값 유지)
  */
 
-import { GO, DEP, ARR, DATE, TIME, TARGET_TIME, TARGET_END_TIME, SEAT_LABEL, INTERVAL, MODE, daysUntil, SMS_AGREE, WAIT_SPECIAL, PAY_TAB, EASY_PAY } from "./config.ts";
 import { log, sleep, randomDelay, closeRl } from "./utils.ts";
-import { SrtSession } from "./SrtSession.ts";
-import { BookingFlow } from "./BookingFlow.ts";
-import { WaitlistFlow } from "./WaitlistFlow.ts";
 import { isDiscordConfigured } from "./discord.ts";
 
+/**
+ * config.ts는 --target-time/--target-end-time 등 CLI 인수를 모듈 평가 시점(top-level)에
+ * 검증해 잘못되면 즉시 throw한다. SrtSession.ts/BookingFlow.ts/WaitlistFlow.ts도 전부
+ * config.ts를 정적 import하므로, 이들을 이 파일 상단에서 정적으로 import하면 config.ts의
+ * throw가 main() 진입 전 모듈 로딩 단계에서 터져 나가 사용자에게 friendly 메시지 없이
+ * 스택트레이스만 보여주고 죽는다(2026-08 리뷰에서 발견). main() 안에서 동적 import로
+ * 감싸 실패 시 friendly 에러 메시지 + exit(1)을 보장한다.
+ */
+async function loadDependencies() {
+  const config = await import("./config.ts");
+  const { SrtSession } = await import("./SrtSession.ts");
+  const { BookingFlow } = await import("./BookingFlow.ts");
+  const { WaitlistFlow } = await import("./WaitlistFlow.ts");
+  const { validatePaymentSelection } = await import("./payMethod.ts");
+  return { config, SrtSession, BookingFlow, WaitlistFlow, validatePaymentSelection };
+}
+
 async function main() {
+  let deps: Awaited<ReturnType<typeof loadDependencies>>;
+  try {
+    deps = await loadDependencies();
+  } catch (err) {
+    console.error(`[오류] 설정 검증 실패: ${(err as Error).message}`);
+    process.exit(1);
+  }
+
+  const {
+    config: {
+      GO, DEP, ARR, DATE, TIME, TARGET_TIME, TARGET_END_TIME, SEAT_LABEL,
+      INTERVAL, MODE, daysUntil, SMS_AGREE, WAIT_SPECIAL, PAY_TAB, EASY_PAY,
+    },
+    SrtSession, BookingFlow, WaitlistFlow, validatePaymentSelection,
+  } = deps;
+
   // ─── 시작 배너 ────────────────────────────────────────────────────────
   const days = DATE ? daysUntil(DATE) : null;
   const modeLabel = MODE === "WAITLIST"
@@ -60,6 +89,18 @@ async function main() {
     console.error("[오류] --date 옵션 필수 (예: --date 20260710)");
     process.exit(1);
   }
+
+  // ─── 결제수단 인수 사전 검증 ─────────────────────────────────────────────
+  // 좌석 확보(임시 10분 확보) 이후 PaymentFlow 실행 시점에야 --pay-tab/--easy-pay
+  // 오타가 발각되면 throw로 프로세스가 죽고 브라우저가 닫히며 좌석이 유실된다 —
+  // 세션 생성 전에 미리 검증해 fail-fast 시킨다.
+  try {
+    validatePaymentSelection(PAY_TAB, EASY_PAY);
+  } catch (err) {
+    console.error(`[오류] ${(err as Error).message}`);
+    process.exit(1);
+  }
+
   // ─── 세션 생성 & 로그인 ────────────────────────────────────────────────
   const session = await SrtSession.create();
   await session.ensureLogin();
