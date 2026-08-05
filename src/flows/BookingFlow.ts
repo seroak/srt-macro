@@ -1,11 +1,12 @@
 import notifier from "node-notifier";
 import { type Page } from "playwright";
-import { DEP, ARR, SRT_PAYMENT_APPROVE_FILE } from "./config.ts";
-import { log, sleep, waitEnter } from "./utils.ts";
-import { sendDiscord } from "./discord.ts";
+import { DEP, ARR, SRT_PAYMENT_APPROVE_FILE } from "../config.ts";
+import { log, sleep, waitEnter } from "../utils.ts";
+import { sendDiscord } from "../notify/discord.ts";
 import { PaymentFlow } from "./PaymentFlow.ts";
-import { armPaymentApprovalGate } from "./paymentApproval.ts";
-import { formatTrainInfo, type CaughtTrain } from "./trainInfoFormat.ts";
+import { armPaymentApprovalGate } from "../payment/paymentApproval.ts";
+import { formatTrainInfo, type CaughtTrain } from "../notify/trainInfoFormat.ts";
+import { classifyAlertPopup } from "./alertPopup.ts";
 
 /**
  * BookingFlow — checkUserInfo.do 이후 예약 완료까지 자동 처리.
@@ -25,7 +26,10 @@ export class BookingFlow {
     private readonly train: CaughtTrain,
   ) {}
 
-  async handle(): Promise<void> {
+  // 이용안내(중련운행 안내) 모달 자동 확인 후 재진입 시 무한 재귀를 막는 상한.
+  private static readonly MAX_NOTICE_CONFIRM_ATTEMPTS = 3;
+
+  async handle(noticeAttempt = 0): Promise<void> {
     // 예약하기 클릭 직후 confirmReservationInfo.do 로 이동하는 중일 수 있으므로 잠깐 대기
     if (!this.isReservationConfirmPage(this.page.url())) {
       await this.page
@@ -46,16 +50,28 @@ export class BookingFlow {
       return;
     }
 
-    // ── KTX 교차판매 SweetAlert 감지 ──────────────────────────────────────
-    // KTX 열차는 페이지 이동 없이 모달이 뜸 → 사용자가 직접 처리
+    // ── SweetAlert 모달 감지 (코레일 교차판매 / 이용안내) ──────────────────
+    // 두 모달 모두 페이지 이동 없이 뜬다. 코레일 교차판매는 사람이 처리해야 하지만,
+    // 이용안내(중련·복합운행 SRT 안내)는 "확인"만 누르면 그대로 예약 흐름이 이어진다.
     if (url.includes("selectScheduleList") || url.includes("dynaPath")) {
-      const hasKtxAlert = await this.page.evaluate(() => {
+      const popupText = await this.page.evaluate(() => {
         const el = document.querySelector(".swal2-popup");
-        return el ? (el as HTMLElement).innerText.substring(0, 100) : null;
+        return el ? (el as HTMLElement).innerText : null;
       });
-      if (hasKtxAlert) {
-        log(`KTX 교차판매 모달 감지:\n  "${hasKtxAlert}"`);
-        log("KTX 열차는 코레일 사이트로 이동합니다. 브라우저에서 직접 진행하세요.");
+      if (popupText) {
+        const kind = classifyAlertPopup(popupText);
+        if (kind === "notice" && noticeAttempt < BookingFlow.MAX_NOTICE_CONFIRM_ATTEMPTS) {
+          log(`이용안내 모달 감지 — 자동 확인 후 예약 계속 진행:\n  "${popupText.substring(0, 100)}"`);
+          await this.page.locator(".swal2-confirm").first().click().catch(() => {});
+          await sleep(500);
+          return this.handle(noticeAttempt + 1);
+        }
+        if (kind === "notice") {
+          log(`이용안내 모달이 ${BookingFlow.MAX_NOTICE_CONFIRM_ATTEMPTS}회 반복돼 자동 확인을 중단합니다 — 브라우저에서 직접 진행하세요.`);
+        } else {
+          log(`KTX 교차판매 모달 감지:\n  "${popupText.substring(0, 100)}"`);
+          log("KTX 열차는 코레일 사이트로 이동합니다. 브라우저에서 직접 진행하세요.");
+        }
         await waitEnter("처리 완료 후 Enter > ");
         return;
       }

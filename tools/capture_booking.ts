@@ -27,13 +27,13 @@
 import * as fs from "fs";
 import * as path from "path";
 import { type Page, type Dialog } from "playwright";
-import { DEP, ARR, DATE, TARGET_TIME, TARGET_END_TIME, SEAT_LABEL, SRT_PAYMENT_APPROVE_FILE, PAY_TAB } from "./config.ts";
-import { log, randomDelay } from "./utils.ts";
-import { SrtSession } from "./SrtSession.ts";
-import { waitForPaymentApproval } from "./paymentApproval.ts";
-import { resolvePayTabSelector } from "./payMethod.ts";
+import { DEP, ARR, DATE, TARGET_TIME, TARGET_END_TIME, SEAT_LABEL, SRT_PAYMENT_APPROVE_FILE, PAY_TAB } from "../src/config.ts";
+import { log, randomDelay } from "../src/utils.ts";
+import { SrtSession } from "../src/core/SrtSession.ts";
+import { waitForPaymentApproval } from "../src/payment/paymentApproval.ts";
+import { resolvePayTabSelector } from "../src/payment/payMethod.ts";
 
-const CAPTURE_DIR = path.join(import.meta.dirname, "capture");
+const CAPTURE_DIR = path.join(import.meta.dirname, "..", "capture");
 
 /** 현재 페이지의 URL·HTML·form 필드·클릭 가능 요소를 파일로 덤프 */
 async function dump(page: Page, step: number, label: string): Promise<void> {

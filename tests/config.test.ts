@@ -10,7 +10,8 @@ import {
   parseSeatClasses,
   resolveTargetEndTime,
   resolveTargetTime,
-} from "./config.ts";
+  resolveTrainGroupCode,
+} from "../src/config.ts";
 
 function yyyymmdd(date: Date): string {
   const y = date.getFullYear();
@@ -134,6 +135,27 @@ describe("resolveTargetEndTime()", () => {
     assert.throws(
       () => resolveTargetEndTime("15:00", "14:59"),
       /탐색 시작 시각\(15:00\)보다 빠를 수 없습니다/,
+    );
+  });
+});
+
+describe("resolveTrainGroupCode()", () => {
+  it("SRT+KTX → 900 (기본값)", () => {
+    assert.equal(resolveTrainGroupCode("SRT+KTX"), "900");
+  });
+
+  it("SRT → 300", () => {
+    assert.equal(resolveTrainGroupCode("SRT"), "300");
+  });
+
+  it("전체 → 109", () => {
+    assert.equal(resolveTrainGroupCode("전체"), "109");
+  });
+
+  it("알 수 없는 값은 거부한다", () => {
+    assert.throws(
+      () => resolveTrainGroupCode("KTX단독"),
+      /--train-type 값 오류/,
     );
   });
 });

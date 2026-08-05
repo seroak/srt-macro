@@ -56,7 +56,7 @@ npm run srt -- --dep 수서 --arr 부산 --date 20260710 --time 14 --target-time
 
 ### 새 역 추가하기
 
-`config.ts`의 `STATION_CODE` 맵에 없는 역은 etk.srail.kr 조회 폼에서 DevTools로
+`src/config.ts`의 `STATION_CODE` 맵에 없는 역은 etk.srail.kr 조회 폼에서 DevTools로
 `dptRsStnCd` 값을 확인해 `역이름: "코드"` 형태로 추가하면 됩니다.
 
 ## 사용 방법 2 — 웹 UI

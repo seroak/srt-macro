@@ -1,9 +1,9 @@
 import notifier from "node-notifier";
 import { type Page } from "playwright";
-import { DEP, ARR, SMS_AGREE, WAIT_SPECIAL } from "./config.ts";
-import { log, sleep, waitEnter } from "./utils.ts";
-import { sendDiscord } from "./discord.ts";
-import { formatTrainInfo, type CaughtTrain } from "./trainInfoFormat.ts";
+import { DEP, ARR, SMS_AGREE, WAIT_SPECIAL } from "../config.ts";
+import { log, sleep, waitEnter } from "../utils.ts";
+import { sendDiscord } from "../notify/discord.ts";
+import { formatTrainInfo, type CaughtTrain } from "../notify/trainInfoFormat.ts";
 
 /**
  * WaitlistFlow — 예약대기 신청 페이지 처리.

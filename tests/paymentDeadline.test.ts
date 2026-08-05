@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { nextDeadlineAlert, PAYMENT_DEADLINE_MS } from "./paymentDeadline.ts";
+import { nextDeadlineAlert, PAYMENT_DEADLINE_MS } from "../src/payment/paymentDeadline.ts";
 
 test("10분 타임아웃 상수는 600000ms다", () => {
   assert.equal(PAYMENT_DEADLINE_MS, 10 * 60_000);

@@ -13,8 +13,9 @@ import {
   TARGET_END_TIME,
   SEAT_CLASSES,
   MODE,
-} from "./config.ts";
-import { log, sleep } from "./utils.ts";
+  TRAIN_GROUP_CODE,
+} from "../config.ts";
+import { log, sleep } from "../utils.ts";
 import { selectTargetTrain, type TrainSelectResult } from "./trainSelect.ts";
 import { isSrtLoginCompleteUrl } from "./loginRedirect.ts";
 import { runAndWaitForNavigation } from "./navigation.ts";
@@ -23,12 +24,10 @@ import { runAndWaitForNavigation } from "./navigation.ts";
 /** trainSelect.ts의 selectTargetTrain() 반환 타입 재-export (기존 호출부 호환용) */
 export type TrainInfo = TrainSelectResult;
 
-// ─── 좌석 등급 → 컬럼/타입 매핑 (Node 사이드에서 사용, clickReserve/clickWaitlist용) ──
-function seatColIdx(seatClass: string): number {
-  return seatClass === "특실" ? 5 : 6;
-}
-function isStandingSeat(seatClass: string): boolean {
-  return seatClass === "입석+좌석";
+// ─── 좌석 등급 → 버튼 id 접두어 매핑 (clickReserve/clickWaitlist용) ──────────
+// 입석+좌석도 일반실과 같은 genRsvBtn을 쓰고 onclick 함수명으로만 구분된다 (trainSelect.ts와 동일 규칙).
+function seatBtnPrefix(seatClass: string): "speRsvBtn" | "genRsvBtn" {
+  return seatClass === "특실" ? "speRsvBtn" : "genRsvBtn";
 }
 
 // ─── 역 코드 조회 헬퍼 ──────────────────────────────────────────────────────
@@ -167,16 +166,22 @@ export class SrtSession {
     }
 
     // 출발역/도착역 직접 설정 (숨김 코드 필드 + 표시 텍스트 필드)
+    // trnGpCd(차종구분, 2026-08-05 SRT+KTX 통합 이후 신설 필드)는 없는 페이지 상태에서도
+    // 깨지지 않도록 존재할 때만 설정한다.
     await this.page.evaluate(
-      ({ depCode, arrCode, depName, arrName, date, tm }) => {
+      ({ depCode, arrCode, depName, arrName, date, tm, trainGpCd }) => {
         (document.querySelector("#dptRsStnCd") as HTMLInputElement).value = depCode;
         (document.querySelector("#dptRsStnCdNm") as HTMLInputElement).value = depName;
         (document.querySelector("#arvRsStnCd") as HTMLInputElement).value = arrCode;
         (document.querySelector("#arvRsStnCdNm") as HTMLInputElement).value = arrName;
         (document.querySelector("#dptDt") as HTMLSelectElement).value = date;
         (document.querySelector("#dptTm") as HTMLSelectElement).value = tm;
+        const trnGpRadio = document.querySelector(
+          `input[name="trnGpCd"][value="${trainGpCd}"]`,
+        ) as HTMLInputElement | null;
+        if (trnGpRadio) trnGpRadio.checked = true;
       },
-      { depCode, arrCode, depName: DEP, arrName: ARR, date: DATE, tm: tmValue },
+      { depCode, arrCode, depName: DEP, arrName: ARR, date: DATE, tm: tmValue, trainGpCd: TRAIN_GROUP_CODE },
     );
 
     // 조회하기 버튼 클릭
@@ -214,13 +219,13 @@ export class SrtSession {
    * KTX 교차판매 열차는 SweetAlert2 모달이 뜨고 페이지 이동 없음 (별도 처리 필요).
    */
   async clickReserve(rowIndex: number, seatClass: string): Promise<Page> {
-    const colIdx = seatColIdx(seatClass);
-    const isStanding = isStandingSeat(seatClass);
-    // 예약 버튼 클릭으로 발생하는 첫 dialog만 처리
+    const btnId = `${seatBtnPrefix(seatClass)}${rowIndex}`;
 
-    log(`예약 버튼 클릭: row=${rowIndex}, col=${colIdx} (${seatClass})`);
+    log(`예약 버튼 클릭: id=${btnId} (${seatClass})`);
 
     // 예약 버튼 클릭으로 발생하는 첫 dialog만 처리
+    // "스마트폰 어플이 있습니까?" 등 confirm 다이얼로그 → dismiss(아니오)로 웹 예약 흐름 유지
+    // Playwright는 핸들러 없으면 자동 dismiss하지만 그 전에 핸들러 등록 필요
 
     const prevUrl = this.page.url();
     const navPromise = this.page
@@ -229,52 +234,12 @@ export class SrtSession {
         timeout: 15000,
       })
       .catch(() => null);
-    // "스마트폰 어플이 있습니까?" 등 confirm 다이얼로그 → dismiss(아니오)로 웹 예약 흐름 유지
-    // Playwright는 핸들러 없으면 자동 dismiss하지만 그 전에 핸들러 등록 필요
 
     // SRT 직통: insert-form.submit() → 현재 페이지 이동
     // 클릭 전에 설정해야 빠른 navigation을 놓치지 않음
-
-    // id 없이 행의 좌석 셀에서 대상 버튼을 직접 찾아 클릭
-    await this.page.evaluate(
-      ({ ri, ci, standing }) => {
-        const rows = document.querySelectorAll("table tbody tr");
-        const row = rows[ri];
-        if (!row) return;
-        const tds = row.querySelectorAll("td");
-        const cell = tds[ci];
-        if (!cell) return;
-        let btn: HTMLElement | null = null;
-        if (standing) {
-          btn = cell.querySelector(
-            'a[onclick*="requestReservationInfoAnn"], button[onclick*="requestReservationInfoAnn"]',
-          );
-          if (!btn) {
-            btn =
-              (Array.from(cell.querySelectorAll("a, button")).find((el) =>
-                (el as HTMLElement).innerText?.includes("입석"),
-              ) as HTMLElement) ?? null;
-          }
-        } else {
-          btn =
-            (Array.from(cell.querySelectorAll("a, button")).find((el) => {
-              const onclick = el.getAttribute("onclick") ?? "";
-              return onclick.includes("requestReservationInfo") && !onclick.includes("requestReservationInfoAnn");
-            }) as HTMLElement) ?? null;
-          if (!btn) {
-            btn =
-              (Array.from(cell.querySelectorAll("a, button")).find(
-                (el) =>
-                  (el as HTMLElement).innerText?.includes("예약") &&
-                  !(el as HTMLElement).innerText?.includes("입석") &&
-                  !(el.getAttribute("onclick") ?? "").includes("showKorail"),
-              ) as HTMLElement) ?? null;
-          }
-        }
-        btn?.click();
-      },
-      { ri: rowIndex, ci: colIdx, standing: isStanding },
-    );
+    await this.page.evaluate((id) => {
+      document.getElementById(id)?.click();
+    }, btnId);
 
     const navigated = await navPromise;
 
@@ -286,45 +251,24 @@ export class SrtSession {
 
   // ─── 예약대기 버튼 클릭 → 신청 페이지 반환 ───────────────────────────────
   /**
-   * WAITLIST 모드에서 호출. 해당 행의 "예약대기" 버튼을 클릭한다.
-   * clickReserve()와 동일한 패턴 (dialog 핸들러 + waitForURL).
-   *
-   * NOTE: waitlistBtn 셀렉터(onclick 함수명)는 라이브 DevTools 확인 후 갱신 필요.
-   *       현재는 "예약대기" 텍스트 폴백을 최우선으로 사용.
+   * WAITLIST 모드에서 호출. 해당 행의 예약대기 버튼(requestReservationWait, 사이트 정적 JS
+   * 원문으로 확인한 실제 함수명)을 클릭한다. clickReserve()와 동일한 패턴 (dialog 핸들러 + waitForURL).
+   * 버튼 id는 예약 상태와 동일한 genRsvBtn/speRsvBtn을 재사용한다 — 사이트 JS(changeKorailBtnTxt)가
+   * 같은 버튼의 텍스트만 "예약대기"로 바꿔치기하는 구조이기 때문.
    */
   async clickWaitlist(rowIndex: number, seatClass: string): Promise<Page> {
-    const colIdx = seatColIdx(seatClass);
+    const btnId = `${seatBtnPrefix(seatClass)}${rowIndex}`;
 
-    log(`예약대기 버튼 클릭: row=${rowIndex}, col=${colIdx} (${seatClass})`);
+    log(`예약대기 버튼 클릭: id=${btnId} (${seatClass})`);
 
     const prevUrl = this.page.url();
     const navPromise = this.page
       .waitForURL((url) => url.href !== prevUrl, { waitUntil: "domcontentloaded", timeout: 15_000 })
       .catch(() => null);
 
-    await this.page.evaluate(
-      ({ ri, ci }) => {
-        const rows = document.querySelectorAll("table tbody tr");
-        const row = rows[ri];
-        if (!row) return;
-        const tds = row.querySelectorAll("td");
-        const cell = tds[ci];
-        if (!cell) return;
-        // onclick 함수명 우선, 텍스트 폴백
-        let btn: HTMLElement | null = cell.querySelector(
-          'a[onclick*="requestWaitingReservation"], button[onclick*="requestWaitingReservation"],' +
-            'a[onclick*="waitList"], button[onclick*="waitList"]',
-        );
-        if (!btn) {
-          btn =
-            (Array.from(cell.querySelectorAll("a, button")).find((el) =>
-              (el as HTMLElement).innerText?.includes("예약대기"),
-            ) as HTMLElement) ?? null;
-        }
-        btn?.click();
-      },
-      { ri: rowIndex, ci: colIdx },
-    );
+    await this.page.evaluate((id) => {
+      document.getElementById(id)?.click();
+    }, btnId);
 
     const navigated = await navPromise;
 

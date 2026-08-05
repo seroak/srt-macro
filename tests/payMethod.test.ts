@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { resolvePayTabSelector, resolveEasyPaySelector, validatePaymentSelection } from "./payMethod.ts";
+import { resolvePayTabSelector, resolveEasyPaySelector, validatePaymentSelection } from "../src/payment/payMethod.ts";
 
 test("결제수단 탭 이름을 chTab 셀렉터로 변환한다 (capture/04-pay-tab-간편결제.html 확인 순서)", () => {
   assert.equal(resolvePayTabSelector("신용카드"), "#chTab1");

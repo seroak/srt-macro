@@ -10,7 +10,7 @@ import * as os from "os";
 import * as path from "path";
 import { EventEmitter } from "events";
 import { type Page } from "playwright";
-import { waitForPaymentApproval, armPaymentApprovalGate } from "./paymentApproval.ts";
+import { waitForPaymentApproval, armPaymentApprovalGate } from "../src/payment/paymentApproval.ts";
 
 function tmpApproveFile(): string {
   return path.join(os.tmpdir(), `srt_payment_approve_test_${Date.now()}_${Math.random().toString(36).slice(2)}`);

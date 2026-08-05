@@ -8,7 +8,35 @@ import assert from "node:assert/strict";
 import { createServer, request as httpRequest, type Server } from "http";
 import { EventEmitter } from "events";
 import type { ChildProcess } from "child_process";
-import { startServer, type SpawnMacro } from "./ui.ts";
+import { startServer, type SpawnMacro } from "../ui.ts";
+
+/**
+ * tsx 4.22.4 + Node v25.2.1 조합에서 http.Server를 만들고 close()한 뒤에도
+ * 내부 Socket 핸들이 이벤트 루프에서 해제되지 않아 이 파일의 모든 테스트가
+ * 통과한 뒤에도 프로세스가 종료되지 않는 현상이 있다(2026-08-05 확인).
+ *
+ * 격리된 최소 재현으로 검증한 사실:
+ *  - HTTP 요청을 한 번도 안 보내고 server.listen()+close()만 해도 재현된다
+ *    (연결/keep-alive 소켓과 무관 — 이 파일의 request() 헬퍼가 이미 처리한
+ *    undici 이슈와는 다른 원인).
+ *  - `node --experimental-strip-types`(tsx 없이 네이티브 타입 스트리핑)로
+ *    똑같은 재현 스크립트를 돌리면 동일하게 핸들이 잠깐 남지만 이후 event
+ *    loop tick에서 정상 해제되어 프로세스가 종료된다 — tsx 아래에서만 그
+ *    해제가 영영 일어나지 않는다.
+ * 즉 startServer()/ui.ts의 결함이 아니라 tsx 로더가 이 Node 버전에서 해당
+ * 핸들의 자연 해제를 막는 도구 계층 이슈로 판단한다. 프로덕션 실행(장기
+ * 구동 서버)에는 영향이 없다.
+ *
+ * 해결: `after(() => process.exit(...))` 훅으로 직접 강제 종료를 시도했으나
+ * node:test의 루트 after 훅이 마지막 describe의 비동기 테스트가 시작되기도
+ * 전에 실행돼 그 테스트를 통째로 건너뛰는(실행조차 안 되는) 회귀가 재현됐다
+ * (3회 재현, 매번 5개 중 마지막 1개 누락 — 테스트를 조용히 안 도는 것은
+ * 프로세스가 안 끝나는 것보다 위험하다). 대신 Node 코어가 이 정확한 실패
+ * 유형("테스트는 다 통과했는데 핸들 누수로 프로세스가 안 끝남")을 위해 제공하는
+ * `--test-force-exit` CLI 플래그를 쓴다 — 모든 테스트가 실제로 다 실행되고
+ * 리포터가 결과를 flush한 뒤에만 강제 종료하므로 커버리지 손실이 없다.
+ * package.json의 test/test:browser 스크립트가 이 플래그를 전달한다.
+ */
 
 function onceListening(server: Server): Promise<void> {
   return new Promise((resolve) => server.once("listening", resolve));

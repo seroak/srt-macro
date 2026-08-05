@@ -1,6 +1,6 @@
 import { it } from "node:test";
 import assert from "node:assert/strict";
-import { buildMacroCliArgs } from "./macroArgs.ts";
+import { buildMacroCliArgs } from "../src/server/macroArgs.ts";
 
 it("예매 탐색 시작·끝 시각을 CLI 인수로 전달한다", () => {
   const args = buildMacroCliArgs({

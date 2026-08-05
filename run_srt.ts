@@ -22,8 +22,8 @@
  *   --easy-pay  간편결제 수단 내통장결제|네이버페이|페이코|카카오페이 (기본: 미지정, 화면 기본값 유지)
  */
 
-import { log, sleep, randomDelay, closeRl } from "./utils.ts";
-import { isDiscordConfigured } from "./discord.ts";
+import { log, sleep, randomDelay, closeRl } from "./src/utils.ts";
+import { isDiscordConfigured } from "./src/notify/discord.ts";
 
 /**
  * config.ts는 --target-time/--target-end-time 등 CLI 인수를 모듈 평가 시점(top-level)에
@@ -34,11 +34,11 @@ import { isDiscordConfigured } from "./discord.ts";
  * 감싸 실패 시 friendly 에러 메시지 + exit(1)을 보장한다.
  */
 async function loadDependencies() {
-  const config = await import("./config.ts");
-  const { SrtSession } = await import("./SrtSession.ts");
-  const { BookingFlow } = await import("./BookingFlow.ts");
-  const { WaitlistFlow } = await import("./WaitlistFlow.ts");
-  const { validatePaymentSelection } = await import("./payMethod.ts");
+  const config = await import("./src/config.ts");
+  const { SrtSession } = await import("./src/core/SrtSession.ts");
+  const { BookingFlow } = await import("./src/flows/BookingFlow.ts");
+  const { WaitlistFlow } = await import("./src/flows/WaitlistFlow.ts");
+  const { validatePaymentSelection } = await import("./src/payment/payMethod.ts");
   return { config, SrtSession, BookingFlow, WaitlistFlow, validatePaymentSelection };
 }
 

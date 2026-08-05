@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { isSrtLoginCompleteUrl } from "./loginRedirect.ts";
+import { isSrtLoginCompleteUrl } from "../src/core/loginRedirect.ts";
 
 describe("isSrtLoginCompleteUrl()", () => {
   it("accepts the SRT main page reached after login", () => {

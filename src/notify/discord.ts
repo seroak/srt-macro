@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "fs";
 import { dirname, resolve } from "path";
-import { log } from "./utils.ts";
+import { log } from "../utils.ts";
 import { getSavedWebhookUrl } from "./webhookConfig.ts";
 
 /**

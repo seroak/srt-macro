@@ -1,6 +1,6 @@
 import { it } from "node:test";
 import assert from "node:assert/strict";
-import { runAndWaitForNavigation } from "./navigation.ts";
+import { runAndWaitForNavigation } from "../src/core/navigation.ts";
 
 it("registers navigation waiting before triggering the action", async () => {
   const events: string[] = [];

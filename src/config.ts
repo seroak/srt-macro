@@ -175,6 +175,29 @@ export const SEAT_CLASSES: string[] = parseSeatClasses(getArg("--seat", "일반�
 /** 배너·로그 표시용 (예: "일반실/특실") */
 export const SEAT_LABEL = SEAT_CLASSES.join("/");
 
+// ─── 차종구분(trnGpCd) ────────────────────────────────────────────────────
+// 2026-08-05 SRT+KTX 통합 이후 조회 폼에 신설된 필드. 값을 안 보내면 사이트
+// 기본값("전체")으로 조회되지만, 명시적으로 지정해 조회 조건을 고정한다.
+const TRAIN_GROUP_CODE_MAP: Record<string, string> = {
+  "전체": "109",
+  "SRT": "300",
+  "SRT+KTX": "900",
+};
+
+/** --train-type 값("전체" | "SRT" | "SRT+KTX")을 trnGpCd 폼 값으로 변환 */
+export function resolveTrainGroupCode(raw: string): string {
+  const code = TRAIN_GROUP_CODE_MAP[raw];
+  if (!code) {
+    throw new Error(
+      `--train-type 값 오류: "${raw}" — 전체 | SRT | SRT+KTX 중 하나를 입력하세요.`,
+    );
+  }
+  return code;
+}
+
+/** 조회 시 trnGpCd 라디오에 설정할 값 (기본: SRT+KTX → "900") */
+export const TRAIN_GROUP_CODE = resolveTrainGroupCode(getArg("--train-type", "SRT+KTX"));
+
 /**
  * 폴링 간격(ms). 0이면 800~1500ms 랜덤 jitter 사용.
  * 랜덤 jitter 권장 — 고정 간격보다 자연스럽게 조회

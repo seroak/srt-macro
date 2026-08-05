@@ -1,11 +1,11 @@
 import { type Page } from "playwright";
-import { DEP, ARR, PAY_TAB, EASY_PAY, SRT_PAYMENT_APPROVE_FILE } from "./config.ts";
-import { log, waitEnter } from "./utils.ts";
-import { sendDiscord } from "./discord.ts";
-import { armPaymentApprovalGate } from "./paymentApproval.ts";
-import { formatTrainInfo, type CaughtTrain } from "./trainInfoFormat.ts";
-import { resolvePayTabSelector, resolveEasyPaySelector } from "./payMethod.ts";
-import { nextDeadlineAlert, PAYMENT_DEADLINE_MS } from "./paymentDeadline.ts";
+import { DEP, ARR, PAY_TAB, EASY_PAY, SRT_PAYMENT_APPROVE_FILE } from "../config.ts";
+import { log, waitEnter } from "../utils.ts";
+import { sendDiscord } from "../notify/discord.ts";
+import { armPaymentApprovalGate } from "../payment/paymentApproval.ts";
+import { formatTrainInfo, type CaughtTrain } from "../notify/trainInfoFormat.ts";
+import { resolvePayTabSelector, resolveEasyPaySelector } from "../payment/payMethod.ts";
+import { nextDeadlineAlert, PAYMENT_DEADLINE_MS } from "../payment/paymentDeadline.ts";
 
 /**
  * PaymentFlow — confirmReservationInfo.do(좌석 10분 임시확보) 이후 결제 화면 진입까지 자동 처리.

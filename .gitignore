@@ -27,3 +27,6 @@ vendor/
 release/
 dist-electron/
 ui/dist/
+.claude/
+tmp/
+*.log

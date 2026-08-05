@@ -39,12 +39,17 @@ export interface TrainSelectResult {
  * - 잔여석 열차 발견 → 해당 열차 반환 (seatAvailable: true, 가장 이른 열차 우선)
  * - 열차는 있지만 전부 매진 → 첫 번째 열차 반환 (seatAvailable: false)
  * - 결과 테이블에 열차 없음 → null
+ *
+ * 2026-08-05 SRT+KTX 통합 이후: td 칸 순서가 아니라 결과 행의 숨은 input
+ * (`trnNo[i]`/`dptTm[i]`/`arvTm[i]`/`trnGpNm[i]`, 라이브 캡처로 확인)과
+ * 버튼 id(`genRsvBtn{i}`/`speRsvBtn{i}`)로 파싱한다 — td 개수·순서가 또
+ * 바뀌어도 안전. rowIndex는 이 hidden input의 인덱스 i와 동일하다.
  */
 // NOTE: 이 함수 안에서는 `const f = (x) => ...` 형태의 지역 헬퍼 함수를 만들지 않는다.
 // tsx(esbuild)가 keepNames 옵션으로 모든 지역 함수를 `__name(fn, "이름")` 호출로
 // 감싸는데, 이 헬퍼는 모듈 스코프에만 정의돼 있어 Playwright가 이 함수 하나만
 // .toString()으로 직렬화해 브라우저에 보낼 때 "__name is not defined"로 깨진다.
-// 그래서 컬럼 인덱스/입석 여부 판별은 지역 함수로 추출하지 않고 인라인 표현식으로 둔다.
+// 그래서 시각 변환/버튼 판별은 지역 함수로 추출하지 않고 인라인 표현식으로 둔다.
 export function selectTargetTrain(opts: SeatSelectOpts): TrainSelectResult | null {
   const { seatClasses, minDepTime, maxDepTime } = opts;
   const minMatch = /^(\d{2}):(\d{2})$/.exec(minDepTime);
@@ -56,22 +61,37 @@ export function selectTargetTrain(opts: SeatSelectOpts): TrainSelectResult | nul
     ? Number(maxMatch[1]) * 60 + Number(maxMatch[2])
     : 23 * 60 + 59;
 
-  const rows = document.querySelectorAll("table tbody tr");
+  // 결과 행 인덱스는 trnNo[i] hidden input으로 구한다 (td 칸 순서 무관)
+  const idxSet = new Set<number>();
+  document.querySelectorAll('input[name^="trnNo["]').forEach((el) => {
+    const m = /trnNo\[(\d+)\]/.exec((el as HTMLInputElement).name);
+    if (m) idxSet.add(Number(m[1]));
+  });
+  const indices = Array.from(idxSet).sort((a, b) => a - b);
+
   let firstCandidate: TrainSelectResult | null = null;
   let candidateCount = 0;
 
-  for (let i = 0; i < rows.length; i++) {
-    const tds = rows[i].querySelectorAll("td");
-    if (tds.length < 7) continue;
+  for (const i of indices) {
+    const trainNo = (document.querySelector(`input[name="trnNo[${i}]"]`) as HTMLInputElement | null)?.value ?? "";
+    const rawDep = (document.querySelector(`input[name="dptTm[${i}]"]`) as HTMLInputElement | null)?.value ?? "";
+    const rawArr = (document.querySelector(`input[name="arvTm[${i}]"]`) as HTMLInputElement | null)?.value ?? "";
 
-    const trainNo = tds[2].innerText?.trim() ?? "";
-    const depTime = (tds[3].querySelector("em.time") as HTMLElement | null)?.innerText?.trim() ?? "";
-    const arrTime = (tds[4].querySelector("em.time") as HTMLElement | null)?.innerText?.trim() ?? "";
-
-    const depMatch = /^(\d{2}):(\d{2})$/.exec(depTime);
+    // dptTm/arvTm hidden input은 "HHMMSS" 포맷 (예: "060000") — "HH:MM"으로 변환
+    const depMatch = /^(\d{2})(\d{2})/.exec(rawDep);
     if (!depMatch) continue;
+    const depTime = `${depMatch[1]}:${depMatch[2]}`;
+    const arrMatch = /^(\d{2})(\d{2})/.exec(rawArr);
+    const arrTime = arrMatch ? `${arrMatch[1]}:${arrMatch[2]}` : "";
+
     const depMinutes = Number(depMatch[1]) * 60 + Number(depMatch[2]);
     if (depMinutes < minMinutes || depMinutes > maxMinutes) continue;
+
+    // ── KTX 교차판매 행 배제 ────────────────────────────────────────
+    // hidden input trnGpNm[i]="KTX"이면 매크로가 예약할 수 없는 행 (showKorailBookingChoice로
+    // 코레일 사이트 이동 — 사람이 처리). SRT 직영 행만 후보로 남긴다.
+    const trnGpNm = (document.querySelector(`input[name="trnGpNm[${i}]"]`) as HTMLInputElement | null)?.value ?? "";
+    const isKorailCrossSell = trnGpNm === "KTX";
 
     candidateCount++;
 
@@ -83,71 +103,35 @@ export function selectTargetTrain(opts: SeatSelectOpts): TrainSelectResult | nul
     let seatAvailable = false;
     let waitlistAvailable = false;
 
-    for (const sc of seatClasses) {
-      const colIdx = sc === "특실" ? 5 : 6;
-      const seatCell = tds[colIdx];
-      if (!seatCell) continue;
-      const isStanding = sc === "입석+좌석";
+    if (!isKorailCrossSell) {
+      for (const sc of seatClasses) {
+        const isStanding = sc === "입석+좌석";
+        // 입석+좌석도 일반실과 같은 버튼(genRsvBtn)을 쓰고 onclick 함수명으로만 구분된다.
+        const btn = document.getElementById(sc === "특실" ? `speRsvBtn${i}` : `genRsvBtn${i}`);
+        const onclick = btn?.getAttribute("onclick") ?? "";
+        // showKorail* onclick이면 이 좌석 등급도 코레일 교차판매 — 예약 대상 아님
+        const isKorailBtn = onclick.includes("showKorail");
 
-      // ── 취소표 예약 버튼 감지 ────────────────────────────────────
-      // 입석+좌석: requestReservationInfoAnn (native alert 먼저 띄움)
-      // 일반실/특실: requestReservationInfo (Ann 제외)
-      // KTX 교차판매(showKorailBookingChoice)는 예약 대상 아님
-      let reserveBtn: Element | null = null;
-      if (isStanding) {
-        reserveBtn = seatCell.querySelector(
-          'a[onclick*="requestReservationInfoAnn"], button[onclick*="requestReservationInfoAnn"]',
-        );
-        if (!reserveBtn) {
-          reserveBtn =
-            Array.from(seatCell.querySelectorAll("a, button")).find((el) =>
-              (el as HTMLElement).innerText?.includes("입석"),
-            ) ?? null;
-        }
-      } else {
-        reserveBtn =
-          Array.from(seatCell.querySelectorAll("a, button")).find((el) => {
-            const onclick = el.getAttribute("onclick") ?? "";
-            return onclick.includes("requestReservationInfo") && !onclick.includes("requestReservationInfoAnn");
-          }) ?? null;
-        if (!reserveBtn) {
-          reserveBtn =
-            Array.from(seatCell.querySelectorAll("a, button")).find(
-              (el) =>
-                (el as HTMLElement).innerText?.includes("예약") &&
-                !(el as HTMLElement).innerText?.includes("예약대기") &&
-                !(el as HTMLElement).innerText?.includes("입석") &&
-                !(el.getAttribute("onclick") ?? "").includes("showKorail"),
-            ) ?? null;
-        }
-      }
+        // ── 취소표 예약 버튼 감지 ────────────────────────────────────
+        // 입석+좌석: requestReservationInfoAnn (native alert 먼저 띄움)
+        // 일반실/특실: requestReservationInfo (Ann 제외)
+        const hasReserve = isStanding
+          ? onclick.includes("requestReservationInfoAnn")
+          : onclick.includes("requestReservationInfo") && !onclick.includes("requestReservationInfoAnn");
 
-      if (reserveBtn) {
-        // 취소표 발견 — 이 등급으로 즉시 확정, 낮은 우선순위 등급은 검사 불필요
-        matchedSeat = sc;
-        statusText = seatCell.innerText?.replace(/\s+/g, " ").trim() ?? "";
-        seatAvailable = true;
-        break;
-      }
-
-      // ── 예약대기 버튼 감지 (WAITLIST 모드에서 사용, 취소표 없을 때만 유효) ──
-      // TODO: 실제 onclick 함수명은 라이브 DevTools로 확인 후 교체 필요.
-      //       현재는 "예약대기" 텍스트 폴백만 사용.
-      if (!waitlistAvailable) {
-        let waitlistBtn: Element | null = seatCell.querySelector(
-          'a[onclick*="requestWaitingReservation"], button[onclick*="requestWaitingReservation"],' +
-            'a[onclick*="waitList"], button[onclick*="waitList"]',
-        );
-        if (!waitlistBtn) {
-          waitlistBtn =
-            Array.from(seatCell.querySelectorAll("a, button")).find((el) =>
-              (el as HTMLElement).innerText?.includes("예약대기"),
-            ) ?? null;
+        if (btn && !isKorailBtn && hasReserve) {
+          // 취소표 발견 — 이 등급으로 즉시 확정, 낮은 우선순위 등급은 검사 불필요
+          matchedSeat = sc;
+          statusText = btn.innerText?.trim() ?? "";
+          seatAvailable = true;
+          break;
         }
-        if (waitlistBtn) {
+
+        // ── 예약대기 버튼 감지 (WAITLIST 모드에서 사용, 취소표 없을 때만 유효) ──
+        if (!waitlistAvailable && btn && !isKorailBtn && onclick.includes("requestReservationWait")) {
           waitlistAvailable = true;
           matchedSeat = sc;
-          statusText = seatCell.innerText?.replace(/\s+/g, " ").trim() ?? "";
+          statusText = btn.innerText?.trim() ?? "";
         }
       }
     }

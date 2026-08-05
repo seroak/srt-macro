@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { formatTrainInfo } from "./trainInfoFormat.ts";
+import { formatTrainInfo } from "../src/notify/trainInfoFormat.ts";
 
 test("실제 잡은 열차의 trainNo·depTime·arrTime을 그대로 사용한다 (탐색 범위 아님)", () => {
   const result = formatTrainInfo("수서", "부산", {

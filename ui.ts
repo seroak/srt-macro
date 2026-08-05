@@ -14,9 +14,9 @@ import { EventEmitter } from "events";
 import { createReadStream, existsSync, writeFileSync, unlinkSync } from "fs";
 import { join, extname } from "path";
 import { fileURLToPath } from "url";
-import { isDiscordConfigured, sendDiscordTest } from "./discord.ts";
-import { saveWebhookUrl } from "./webhookConfig.ts";
-import { buildMacroCliArgs, type StartMacroPayload } from "./macroArgs.ts";
+import { isDiscordConfigured, sendDiscordTest } from "./src/notify/discord.ts";
+import { saveWebhookUrl } from "./src/notify/webhookConfig.ts";
+import { buildMacroCliArgs, type StartMacroPayload } from "./src/server/macroArgs.ts";
 
 const DEFAULT_PORT = 3001;
 
