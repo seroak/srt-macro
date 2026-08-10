@@ -17,6 +17,7 @@ import {
 } from "../config.ts";
 import { log, sleep } from "../utils.ts";
 import { selectTargetTrain, type TrainSelectResult } from "./trainSelect.ts";
+import { collectScheduleDiagnostics, type ScheduleDiagnostics } from "./scheduleDiagnostics.ts";
 import { isSrtLoginCompleteUrl } from "./loginRedirect.ts";
 import { runAndWaitForNavigation } from "./navigation.ts";
 
@@ -211,6 +212,29 @@ export class SrtSession {
     const btn = this.page.locator('button:has-text("조회하기"), input[value="조회하기"]').first();
     await runAndWaitForNavigation(this.page, () => btn.click());
     await this.page.waitForSelector("table tbody tr", { timeout: 10_000 }).catch(() => {});
+  }
+
+  // ─── 결과 페이지 진단 (파싱 0건 vs 시간 필터 밖 구분용) ──────────────────
+  /** findTargetTrain()이 null일 때 원인 진단을 위해 hidden input·화면 상태를 그대로 수집한다. */
+  async describeSchedule(): Promise<ScheduleDiagnostics> {
+    return this.page.evaluate(collectScheduleDiagnostics);
+  }
+
+  // ─── 다음 페이지 조회 (결과 목록 10건씩 페이징) ──────────────────────────
+  /**
+   * SRT 결과 목록은 10건씩 페이징되고 "다음"(changeDptTm('NEXT', ...)) 버튼으로 다음 구간을
+   * 조회한다(라이브 캡처로 확인). searchTrains()의 "조회하기 버튼을 form.submit()으로
+   * 우회하지 않는다" 규칙과 동일하게, changeDptTm()을 직접 호출하지 않고 버튼을 클릭한다.
+   * 버튼이 없으면(마지막 페이지) false 반환.
+   */
+  async goNextPage(): Promise<boolean> {
+    const btn = this.page.locator('input[value="다음"]');
+    if ((await btn.count()) === 0) return false;
+
+    log("다음 페이지 조회 중 (다음 10건)...");
+    await runAndWaitForNavigation(this.page, () => btn.first().click());
+    await this.page.waitForSelector("table tbody tr", { timeout: 10_000 }).catch(() => {});
+    return true;
   }
 
   // ─── 예약하기 버튼 클릭 → 예약 확인 페이지 반환 ─────────────────────────

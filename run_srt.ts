@@ -24,6 +24,24 @@
 
 import { log, sleep, randomDelay, closeRl } from "./src/utils.ts";
 import { isDiscordConfigured } from "./src/notify/discord.ts";
+import { shouldAdvancePage } from "./src/core/schedulePaging.ts";
+import type { ScheduleDiagnostics } from "./src/core/scheduleDiagnostics.ts";
+
+/**
+ * 결과 목록 페이지 넘김 상한 — SRT 결과는 10건씩 페이징되는데, 무한정 다음 페이지로
+ * 전진하면(예: trnGpCd 필터·시간대 설정 오류로 목표 구간이 영영 안 나오는 경우) 첫
+ * 페이지로 영영 못 돌아온다. 상한 도달 시 requery()로 첫 페이지부터 다시 훑는다.
+ */
+const MAX_PAGE_ADVANCES = 6;
+
+/** "열차 없음" 진단 로그를 매 회차마다 찍으면 폭주하므로 1회차와 이후 20회마다만 출력 */
+function formatDiagnosticsLog(diag: ScheduleDiagnostics): string {
+  const nextInfo = diag.hasNextButton ? `O(${diag.nextSeedTime})` : "X";
+  return (
+    `진단 — 파싱 ${diag.hiddenRowCount}건 / 화면 행 ${diag.visibleRowCount}개 / ` +
+    `화면 시각 ${diag.visibleTimes.slice(0, 6).join(",") || "없음"} / 다음버튼 ${nextInfo}`
+  );
+}
 
 /**
  * config.ts는 --target-time/--target-end-time 등 CLI 인수를 모듈 평가 시점(top-level)에
@@ -110,6 +128,38 @@ async function main() {
 
   const pollDelay = () => INTERVAL > 0 ? sleep(INTERVAL) : randomDelay();
   let pollCount = 0;
+  const pageState = { advances: 0 };
+
+  /**
+   * "열차 없음" 공통 처리 — 진단 로그(1회차·20회마다) → 페이지 넘김 가능하면 넘김,
+   * 아니면 재조회. POLLING/WAITLIST 양쪽 루프에서 재사용.
+   */
+  async function handleNoTrain(): Promise<void> {
+    const diag = await session.describeSchedule();
+    if (pollCount === 1 || pollCount % 20 === 0) {
+      log(formatDiagnosticsLog(diag));
+    }
+
+    if (
+      pageState.advances < MAX_PAGE_ADVANCES &&
+      shouldAdvancePage(diag.hiddenDepTimes, TARGET_TIME, TARGET_END_TIME)
+    ) {
+      const advanced = await session.goNextPage();
+      if (advanced) {
+        pageState.advances++;
+        log(
+          `${pollCount}회 — ${TARGET_TIME}~${TARGET_END_TIME} 열차 없음. ` +
+            `다음 페이지로 이동 (${pageState.advances}/${MAX_PAGE_ADVANCES})...`,
+        );
+        return;
+      }
+    }
+
+    log(`${pollCount}회 — ${TARGET_TIME}~${TARGET_END_TIME} 열차 없음. 재조회 중...`);
+    pageState.advances = 0;
+    await pollDelay();
+    await session.requery();
+  }
 
   // ─── WAITLIST 모드: 예약대기 신청 ──────────────────────────────────────
   if (MODE === "WAITLIST") {
@@ -120,11 +170,10 @@ async function main() {
       const train = await session.findTargetTrain();
 
       if (!train) {
-        log(`${pollCount}회 — ${TARGET_TIME}~${TARGET_END_TIME} 열차 없음. 재조회 중...`);
-        await pollDelay();
-        await session.requery();
+        await handleNoTrain();
         continue;
       }
+      pageState.advances = 0;
 
       const prefix = `${pollCount}회 — ${train.trainNo}호 ${train.depTime} [${train.matchedSeat}]`;
 
@@ -153,6 +202,7 @@ async function main() {
       }
 
       log(`${prefix} 매진 (예약대기 버튼 미감지, 조회된 ${train.candidateCount}개). 재조회 중...`);
+      pageState.advances = 0;
       await pollDelay();
       await session.requery();
     }
@@ -165,16 +215,16 @@ async function main() {
       const train = await session.findTargetTrain();
 
       if (!train) {
-        log(`${pollCount}회 — ${TARGET_TIME}~${TARGET_END_TIME} 열차 없음. 재조회 중...`);
-        await pollDelay();
-        await session.requery();
+        await handleNoTrain();
         continue;
       }
+      pageState.advances = 0;
 
       const prefix = `${pollCount}회 — ${train.trainNo}호 ${train.depTime} [${train.matchedSeat}]`;
 
       if (!train.seatAvailable) {
         log(`${prefix} 매진 (조회된 ${train.candidateCount}개 열차 모두 매진). 재조회 중...`);
+        pageState.advances = 0;
         await pollDelay();
         await session.requery();
         continue;
