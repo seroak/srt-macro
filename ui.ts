@@ -11,12 +11,13 @@
 import { createServer, type Server, type ServerResponse } from "http";
 import { spawn, exec, type ChildProcess } from "child_process";
 import { EventEmitter } from "events";
-import { createReadStream, existsSync, writeFileSync, unlinkSync } from "fs";
+import { createReadStream, existsSync } from "fs";
 import { join, extname } from "path";
 import { fileURLToPath } from "url";
 import { isDiscordConfigured, sendDiscordTest } from "./src/notify/discord.ts";
 import { saveWebhookUrl } from "./src/notify/webhookConfig.ts";
 import { buildMacroCliArgs, type StartMacroPayload } from "./src/server/macroArgs.ts";
+import { writePortFile, releasePortFile } from "./src/server/portFile.ts";
 
 const DEFAULT_PORT = 3001;
 
@@ -258,10 +259,9 @@ export function startServer(opts: StartServerOptions = {}): Server {
     console.log(`[API] ${openUrl}${IS_SERVE ? " (serve 모드)" : ""}`);
 
     if (opts.portFile) {
-      writeFileSync(opts.portFile, String(actualPort));
-      const cleanup = () => {
-        try { unlinkSync(opts.portFile!); } catch { /* 이미 없으면 무시 */ }
-      };
+      writePortFile(opts.portFile, actualPort);
+      // 자기가 쓴 포트일 때만 지운다 — 교차 삭제 버그 수정 (ktx/ui.ts와 동일 이유)
+      const cleanup = () => { releasePortFile(opts.portFile!, actualPort); };
       process.once("exit", cleanup);
       process.once("SIGINT", () => { cleanup(); process.exit(); });
       process.once("SIGTERM", () => { cleanup(); process.exit(); });

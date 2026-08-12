@@ -23,9 +23,15 @@
  */
 
 import { log, sleep, randomDelay, closeRl } from "./src/utils.ts";
-import { isDiscordConfigured } from "./src/notify/discord.ts";
+import { isDiscordConfigured, sendDiscord } from "./src/notify/discord.ts";
 import { shouldAdvancePage } from "./src/core/schedulePaging.ts";
+import { isScheduleSettled } from "./src/core/scheduleReady.ts";
 import type { ScheduleDiagnostics } from "./src/core/scheduleDiagnostics.ts";
+
+/** "열차 없음" 진단·btnDebug 로그를 매 회차마다 찍으면 폭주하므로 1회차·이후 20회마다만 출력 */
+function shouldLogDiagnostics(pollCount: number): boolean {
+  return pollCount === 1 || pollCount % 20 === 0;
+}
 
 /**
  * 결과 목록 페이지 넘김 상한 — SRT 결과는 10건씩 페이징되는데, 무한정 다음 페이지로
@@ -34,12 +40,18 @@ import type { ScheduleDiagnostics } from "./src/core/scheduleDiagnostics.ts";
  */
 const MAX_PAGE_ADVANCES = 6;
 
-/** "열차 없음" 진단 로그를 매 회차마다 찍으면 폭주하므로 1회차와 이후 20회마다만 출력 */
+/**
+ * "열차 없음" 진단 로그를 매 회차마다 찍으면 폭주하므로 1회차와 이후 20회마다만 출력.
+ * settled=X면 "진짜 열차 없음"이 아니라 결과 페이지가 아직 로드 정착 전(readyState=loading)
+ * 상태에서 판정한 것일 수 있다는 신호 — scheduleReady.ts의 isScheduleSettled() 참고.
+ */
 function formatDiagnosticsLog(diag: ScheduleDiagnostics): string {
   const nextInfo = diag.hasNextButton ? `O(${diag.nextSeedTime})` : "X";
+  const settledInfo = isScheduleSettled(diag) ? "O" : `X(readyState=${diag.readyState})`;
   return (
     `진단 — 파싱 ${diag.hiddenRowCount}건 / 화면 행 ${diag.visibleRowCount}개 / ` +
-    `화면 시각 ${diag.visibleTimes.slice(0, 6).join(",") || "없음"} / 다음버튼 ${nextInfo}`
+    `화면 시각 ${diag.visibleTimes.slice(0, 6).join(",") || "없음"} / 다음버튼 ${nextInfo} / ` +
+    `정착 ${settledInfo}`
   );
 }
 
@@ -135,8 +147,23 @@ async function main() {
    * 아니면 재조회. POLLING/WAITLIST 양쪽 루프에서 재사용.
    */
   async function handleNoTrain(): Promise<void> {
+    // 2026-08-12: 반복 폴링이 SRT의 "비정상적인 접근" IP 차단을 유발한 사고가 있었다 —
+    // 결과 테이블 대신 차단 안내 페이지가 뜨면 findTargetTrain()은 그냥 열차 없음(null)으로
+    // 보이므로, 여기서 별도로 검사해 즉시 멈춘다(계속 재조회하면 차단이 더 길어질 수 있다).
+    if (await session.isBlockedByAntiBot()) {
+      const msg =
+        "SRT 접속이 일시적으로 제한됐습니다 (자동화 요청으로 감지) — 매크로를 즉시 중단합니다. " +
+        "사이트에서 직접 차단 해제 여부를 확인한 뒤 재실행하세요.";
+      console.error(`\n[차단 감지] ${msg}`);
+      if (isDiscordConfigured()) {
+        await sendDiscord("SRT 접속 차단 감지 — 매크로 중단", msg, 0xe74c3c).catch(() => {});
+      }
+      closeRl();
+      process.exit(1);
+    }
+
     const diag = await session.describeSchedule();
-    if (pollCount === 1 || pollCount % 20 === 0) {
+    if (shouldLogDiagnostics(pollCount)) {
       log(formatDiagnosticsLog(diag));
     }
 
@@ -201,7 +228,8 @@ async function main() {
         break;
       }
 
-      log(`${prefix} 매진 (예약대기 버튼 미감지, 조회된 ${train.candidateCount}개). 재조회 중...`);
+      const waitlistDebugSuffix = shouldLogDiagnostics(pollCount) ? ` [디버그: ${train.btnDebug}]` : "";
+      log(`${prefix} 매진 (예약대기 버튼 미감지, 조회된 ${train.candidateCount}개).${waitlistDebugSuffix} 재조회 중...`);
       pageState.advances = 0;
       await pollDelay();
       await session.requery();
@@ -223,7 +251,8 @@ async function main() {
       const prefix = `${pollCount}회 — ${train.trainNo}호 ${train.depTime} [${train.matchedSeat}]`;
 
       if (!train.seatAvailable) {
-        log(`${prefix} 매진 (조회된 ${train.candidateCount}개 열차 모두 매진). 재조회 중...`);
+        const debugSuffix = shouldLogDiagnostics(pollCount) ? ` [디버그: ${train.btnDebug}]` : "";
+        log(`${prefix} 매진 (조회된 ${train.candidateCount}개 열차 모두 매진).${debugSuffix} 재조회 중...`);
         pageState.advances = 0;
         await pollDelay();
         await session.requery();

@@ -16,7 +16,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { chromium, type Browser, type Page } from "playwright";
-import { selectTargetTrain, type SeatSelectOpts } from "../src/core/trainSelect.ts";
+import { selectTargetTrain, clickReserveButton, type SeatSelectOpts } from "../src/core/trainSelect.ts";
 
 let browser: Browser;
 let page: Page;
@@ -301,3 +301,160 @@ test("전부 KTX 교차판매 행이면 예약 후보가 없어 seatAvailable=fa
   assert.equal(result!.seatAvailable, false);
   assert.equal(result!.waitlistAvailable, false);
 });
+
+// ── DOM Fallback: hidden input이 전혀 없는 상태에서의 파싱 검증 ──────────────
+function rowWithoutHidden(
+  i: number,
+  trainNo: string,
+  depTime: string,
+  arrTime: string,
+  speButton: string,
+  genButton: string,
+  gpNm = "SRT",
+): string {
+  return `<tr>
+    <td>직통</td>
+    <td class="trnGp">${gpNm}</td>
+    <td class="trnNo">${trainNo}</td>
+    <td><em class="time">${depTime}</em></td>
+    <td><em class="time">${arrTime}</em></td>
+    <td>${speButton}</td>
+    <td>${genButton}</td>
+  </tr>`;
+}
+
+test("DOM Fallback — hidden input이 없어도 em.time과 버튼으로 취소표를 정상 파싱한다", async () => {
+  await loadRows([
+    rowWithoutHidden(0, "301", "14:09", "16:27", SOLD_OUT, RESERVE_GEN(0)),
+    rowWithoutHidden(1, "303", "14:47", "17:00", SOLD_OUT, SOLD_OUT),
+  ]);
+  const result = await select({
+    seatClasses: ["일반실"],
+    minDepTime: "14:00",
+    maxDepTime: "16:00",
+  });
+  assert.ok(result);
+  assert.equal(result!.trainNo, "301");
+  assert.equal(result!.depTime, "14:09");
+  assert.equal(result!.arrTime, "16:27");
+  assert.equal(result!.seatAvailable, true);
+  assert.equal(result!.candidateCount, 1);
+});
+
+test("DOM Fallback — hidden input이 없어도 예약대기 열차를 정상 감지한다", async () => {
+  await loadRows([
+    rowWithoutHidden(0, "301", "14:09", "16:27", SOLD_OUT, SOLD_OUT),
+    rowWithoutHidden(1, "303", "14:47", "17:00", SOLD_OUT, WAITLIST_BTN(1)),
+  ]);
+  const result = await select({
+    seatClasses: ["일반실"],
+    minDepTime: "14:00",
+    maxDepTime: "16:00",
+  });
+  assert.ok(result);
+  assert.equal(result!.trainNo, "303");
+  assert.equal(result!.depTime, "14:47");
+  assert.equal(result!.waitlistAvailable, true);
+  assert.equal(result!.candidateCount, 2);
+});
+
+// ── 2026-08-12 라이브 캡처: SRT가 genRsvBtn{i}/speRsvBtn{i} id를 제거하고
+// aria-label 버튼(접근성 조치)으로 바꿨다. 아래 4행은 사용자가 직접 확인해 준 실제 결과
+// 페이지 마크업(동탄→대전 20260812, 371/373/377/379호)을 그대로 재현한 것이다 —
+// onclick="reservationAfterMsg(...)"만 있고 id가 없다. rsvPsbFlg[i](특실)/gnrmRsvPsbFlg[i]
+// (일반실) hidden input이 화면 상태와 정확히 일치하는 것도 이때 함께 확인했다.
+function ariaLabelRow(
+  i: number,
+  trainNo: string,
+  depTime: string,
+  arrTime: string,
+  speFlag: "Y" | "N",
+  genFlag: "Y" | "N",
+  gpNm = "SRT",
+): string {
+  const dep6 = depTime.replace(":", "") + "00";
+  const arr6 = arrTime.replace(":", "") + "00";
+  const cell = (flag: "Y" | "N", psrmClCd: "1" | "2", label: string) =>
+    flag === "Y"
+      ? `<a href="#none" onclick="reservationAfterMsg(this, ${i}, '${psrmClCd}', '1101', true, false,''); return false;" class="btn_small btn_burgundy_dark val_m wx90" aria-label="${trainNo}호  ${label} 예약하기"><span>예약하기</span></a>`
+      : `<a href="#none" class="btn_small btn_silver val_m wx90" aria-label="${trainNo}호  ${label} 매진"><span>매진</span></a>`;
+  return `<tr>
+    <td>직통</td>
+    <td class="trnGp">${gpNm}</td>
+    <td>
+      ${hidden("trnNo", i, trainNo)}
+      ${hidden("dptTm", i, dep6)}
+      ${hidden("arvTm", i, arr6)}
+      ${hidden("trnGpNm", i, gpNm)}
+      ${hidden("rsvPsbFlg", i, speFlag)}
+      ${hidden("gnrmRsvPsbFlg", i, genFlag)}
+    </td>
+    <td><em class="time">${depTime}</em></td>
+    <td><em class="time">${arrTime}</em></td>
+    <td>${cell(speFlag, "2", "특실")}</td>
+    <td>${cell(genFlag, "1", "일반실")}</td>
+  </tr>`;
+}
+
+test("aria-label 마크업 — 일반실만 예약 가능(gnrmRsvPsbFlg=Y)한 열차를 잡는다 (373호 재현)", async () => {
+  await loadRows([ariaLabelRow(0, "00373", "21:17", "21:58", "N", "Y")]);
+  const result = await select({ seatClasses: ["일반실"], minDepTime: "00:00" });
+  assert.ok(result);
+  assert.equal(result!.seatAvailable, true);
+  assert.equal(result!.matchedSeat, "일반실");
+  assert.equal(result!.trainNo, "00373");
+});
+
+test("aria-label 마크업 — 특실·일반실 모두 가능할 때 --seat 특실 지정 시 특실을 잡는다 (377호 재현)", async () => {
+  await loadRows([ariaLabelRow(0, "00377", "22:18", "22:52", "Y", "Y")]);
+  const result = await select({ seatClasses: ["특실"], minDepTime: "00:00" });
+  assert.ok(result);
+  assert.equal(result!.seatAvailable, true);
+  assert.equal(result!.matchedSeat, "특실");
+});
+
+test("aria-label 마크업 — 특실·일반실 모두 매진(N/N)이면 매진 판정한다 (371/379호 재현)", async () => {
+  await loadRows([ariaLabelRow(0, "00371", "20:46", "21:37", "N", "N")]);
+  const result = await select({ seatClasses: ["일반실"], minDepTime: "00:00" });
+  assert.ok(result);
+  assert.equal(result!.seatAvailable, false);
+});
+
+test("aria-label 마크업 — KTX 교차판매 행은 gnrmRsvPsbFlg=Y여도 후보에서 제외한다", async () => {
+  await loadRows([ariaLabelRow(0, "00303", "06:00", "08:30", "Y", "Y", "KTX")]);
+  const result = await select({ seatClasses: ["일반실"], minDepTime: "00:00" });
+  assert.ok(result);
+  assert.equal(result!.seatAvailable, false);
+});
+
+// ── clickReserveButton() — SrtSession.clickReserve()가 page.evaluate로 실행하는 클릭 함수 ──
+test("clickReserveButton — aria-label 마크업에서 일반실 버튼을 찾아 클릭한다 (373호 재현)", async () => {
+  await loadRows([ariaLabelRow(0, "00373", "21:17", "21:58", "N", "Y")]);
+  await page.evaluate(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__clicked = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).reservationAfterMsg = (...args: unknown[]) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (window as any).__clicked = args;
+    };
+  });
+  const clicked = await page.evaluate(clickReserveButton, { rowIndex: 0, seatClass: "일반실" });
+  assert.equal(clicked, true);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const args = await page.evaluate(() => (window as any).__clicked);
+  assert.ok(args, "reservationAfterMsg가 실제로 호출됐어야 한다");
+});
+
+test("clickReserveButton — 매진 행에서는 버튼을 못 찾아 false를 반환한다 (371호 재현)", async () => {
+  await loadRows([ariaLabelRow(0, "00371", "20:46", "21:37", "N", "N")]);
+  const clicked = await page.evaluate(clickReserveButton, { rowIndex: 0, seatClass: "일반실" });
+  assert.equal(clicked, false);
+});
+
+test("clickReserveButton — 구 id 마크업(genRsvBtn)에서도 하위호환으로 클릭한다", async () => {
+  await loadRows([row(0, "101", "07:00", "09:00", SOLD_OUT, RESERVE_GEN(0))]);
+  const clicked = await page.evaluate(clickReserveButton, { rowIndex: 0, seatClass: "일반실" });
+  assert.equal(clicked, true);
+});
+

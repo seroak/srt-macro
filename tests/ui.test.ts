@@ -8,6 +8,9 @@ import assert from "node:assert/strict";
 import { createServer, request as httpRequest, type Server } from "http";
 import { EventEmitter } from "events";
 import type { ChildProcess } from "child_process";
+import { mkdtempSync, readFileSync, rmSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
 import { startServer, type SpawnMacro } from "../ui.ts";
 
 /**
@@ -126,6 +129,22 @@ describe("startServer() 포트 자동 폴백", () => {
       server.close();
     } finally {
       blocker.close();
+    }
+  });
+});
+
+describe("startServer() 포트 파일", () => {
+  it("portFile 옵션을 주면 실제 바인딩된 포트를 파일에 기록한다", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "srt-ui-portfile-"));
+    const portFile = join(dir, ".ui-port");
+    const port = 34564;
+    const server = startServer({ port, openBrowser: false, portFile });
+    try {
+      await onceListening(server);
+      assert.equal(readFileSync(portFile, "utf-8"), String(boundPort(server)));
+    } finally {
+      server.close();
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });

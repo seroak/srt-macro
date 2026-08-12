@@ -1,9 +1,9 @@
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
-import { readFileSync } from "fs";
 import { join } from "path";
 import { Readable } from "stream";
 import type { IncomingMessage } from "http";
+import { waitForPortFile } from "../src/server/portFile.ts";
 
 // ui.ts가 실제로 바인딩한 포트를 기록하는 파일 — 선호 포트(3001)가 이미 다른 프로세스에
 // 점유돼 있으면 ui.ts는 listen(0)으로 랜덤 포트에 뜬다. vite의 내장 server.proxy는
@@ -16,19 +16,14 @@ import type { IncomingMessage } from "http";
 // 백엔드에 순수 node -e 스크립트로 직접 붙으면 정상 응답한다. 원인은 Vite가 이
 // 프로세스 안에서 'http' 모듈을 자체적으로 감싸는 것으로 추정되고, 전역 fetch(undici)로
 // 우회하면 문제없이 동작한다 — 그래서 http.request 대신 fetch를 사용한다.
+//
+// 기본 포트(3001)로 조용히 폴백하지 않는다 — 예전에는 포트 파일이 없으면
+// DEFAULT_API_PORT=3001로 폴백했는데, 3001은 ktx 워크스페이스의 API 서버가
+// 점유할 수 있어 srt UI의 /start 요청이 엉뚱하게 ktx 매크로를 띄울 수 있었다.
+// 파일이 끝내 없으면 폴백 대신 503을 반환한다.
 const PORT_FILE = join(import.meta.dirname, "../.ui-port");
-const DEFAULT_API_PORT = 3001;
+const DEFAULT_PORT_WAIT_MS = 10_000;
 const PROXY_PATHS = ["/start", "/stop", "/enter", "/events", "/discord-webhook"];
-
-function resolveApiPort(): number {
-  try {
-    const port = Number(readFileSync(PORT_FILE, "utf-8").trim());
-    if (port > 0) return port;
-  } catch {
-    // API 서버가 아직 포트 파일을 쓰기 전(콜드스타트) — 기본 포트로 폴백
-  }
-  return DEFAULT_API_PORT;
-}
 
 function collectBody(req: IncomingMessage): Promise<Buffer | undefined> {
   if (req.method === "GET" || req.method === "HEAD") return Promise.resolve(undefined);
@@ -47,7 +42,10 @@ function collectBody(req: IncomingMessage): Promise<Buffer | undefined> {
   });
 }
 
-export function apiProxyPlugin(): Plugin {
+export function apiProxyPlugin(opts: { portFile?: string; portWaitMs?: number } = {}): Plugin {
+  const portFile = opts.portFile ?? PORT_FILE;
+  const portWaitMs = opts.portWaitMs ?? DEFAULT_PORT_WAIT_MS;
+
   return {
     name: "srt-api-proxy",
     configureServer(server) {
@@ -65,7 +63,15 @@ export function apiProxyPlugin(): Plugin {
         });
 
         (async () => {
-          const port = resolveApiPort();
+          const port = await waitForPortFile(portFile, portWaitMs);
+          if (port === null) {
+            res.writeHead(503, { "Content-Type": "text/plain; charset=utf-8" });
+            res.end(
+              "API 서버 포트 파일(.ui-port)을 찾지 못했습니다 — 이 워크스페이스의 " +
+              "API 서버(ui.ts)가 뜨지 않았거나 종료됐습니다. 다른 포트로 자동 폴백하지 않습니다.",
+            );
+            return;
+          }
           const body = await collectBody(req);
           const upstream = await fetch(`http://127.0.0.1:${port}${req.url}`, {
             method: req.method,

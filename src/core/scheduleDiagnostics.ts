@@ -27,6 +27,8 @@ export interface ScheduleDiagnostics {
   nextSeedTime: string;
   /** 진단 시점 페이지 URL */
   pageUrl: string;
+  /** 진단 시점 document.readyState — scheduleReady.ts의 isScheduleSettled() 판정에 사용 */
+  readyState: string;
 }
 
 export function collectScheduleDiagnostics(): ScheduleDiagnostics {
@@ -43,6 +45,17 @@ export function collectScheduleDiagnostics(): ScheduleDiagnostics {
       (document.querySelector(`input[name="dptTm[${i}]"]`) as HTMLInputElement | null)?.value ?? "";
     const m = /^(\d{2})(\d{2})/.exec(raw);
     hiddenDepTimes.push(m ? `${m[1]}:${m[2]}` : "");
+  }
+
+  // Fallback: hidden input이 없으면 table tbody tr에서 출발 시각 추출
+  if (indices.length === 0) {
+    document.querySelectorAll("table tbody tr").forEach((tr) => {
+      const timeEl = tr.querySelector("em.time");
+      if (timeEl) {
+        const m = /(\d{2}):(\d{2})/.exec((timeEl as HTMLElement).innerText ?? "");
+        if (m) hiddenDepTimes.push(`${m[1]}:${m[2]}`);
+      }
+    });
   }
 
   const visibleTimes: string[] = [];
@@ -64,5 +77,6 @@ export function collectScheduleDiagnostics(): ScheduleDiagnostics {
     hasNextButton: nextBtn !== null,
     nextSeedTime: seedMatch ? seedMatch[1] : "",
     pageUrl: document.location.href,
+    readyState: document.readyState,
   };
 }
