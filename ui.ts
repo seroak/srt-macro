@@ -38,6 +38,7 @@ const defaultSpawnMacro: SpawnMacro = (cliArgs) =>
   spawn("npm", ["run", "srt", "--", ...cliArgs], {
     cwd: process.cwd(),
     stdio: ["pipe", "pipe", "pipe"],
+    shell: true,
   });
 
 export interface StartServerOptions {
