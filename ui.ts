@@ -8,14 +8,16 @@
  *          같은 프로세스 안에서 API 서버를 구동한다 (자동 브라우저 오픈 없이).
  */
 
-import { createServer, type Server } from "http";
+import { createServer, type Server, type ServerResponse } from "http";
 import { spawn, exec, type ChildProcess } from "child_process";
 import { EventEmitter } from "events";
 import { createReadStream, existsSync } from "fs";
 import { join, extname } from "path";
 import { fileURLToPath } from "url";
-import { isDiscordConfigured, sendDiscordTest } from "./discord.ts";
-import { saveWebhookUrl } from "./webhookConfig.ts";
+import { isDiscordConfigured, sendDiscordTest } from "./src/notify/discord.ts";
+import { saveWebhookUrl } from "./src/notify/webhookConfig.ts";
+import { buildMacroCliArgs, type StartMacroPayload } from "./src/server/macroArgs.ts";
+import { writePortFile, releasePortFile } from "./src/server/portFile.ts";
 
 const DEFAULT_PORT = 3001;
 
@@ -62,6 +64,13 @@ export interface StartServerOptions {
    * 반드시 명시적으로 true를 넘겨야 한다.
    */
   isServe?: boolean;
+  /**
+   * 실제로 바인딩된 포트를 기록할 파일 경로 (선호 포트가 이미 사용 중이어서
+   * listen(0)으로 랜덤 포트에 뜬 경우, vite dev 서버의 프록시가 이 파일을 읽어
+   * 실제 포트를 찾아가게 한다). CLI 단독 실행(dev 모드)에서만 지정 — Electron/serve
+   * 모드는 단일 서버라 프록시 자체가 없으므로 불필요.
+   */
+  portFile?: string;
 }
 
 // ── 프로세스 상태 ─────────────────────────────────────────────────────────────
@@ -70,6 +79,25 @@ const logEmitter = new EventEmitter();
 
 function broadcast(type: "log" | "status", payload: string) {
   logEmitter.emit("event", { type, payload });
+}
+
+/**
+ * 요청 본문을 JSON으로 파싱한다. 실패하면(JSON.parse가 throw) 400을 응답하고 null을
+ * 반환한다 — 호출부는 반드시 null 체크 후 조기 return 해야 한다.
+ *
+ * 이전에는 각 핸들러가 req.on("end", ...) 콜백 안에서 JSON.parse(body)를 그대로
+ * 호출했다 — 잘못된 JSON이 오면 그 throw가 이벤트 핸들러 밖으로 잡히지 않는 채
+ * 전파돼(uncaught exception) Node 프로세스 전체가 죽었다(Electron 앱이면 앱 전체
+ * 크래시). 이 헬퍼로 감싸 잘못된 요청 하나가 서버 전체를 죽이지 않게 한다.
+ */
+function parseJsonBody<T>(body: string, res: ServerResponse): T | null {
+  try {
+    return JSON.parse(body) as T;
+  } catch {
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: false, error: "잘못된 JSON 본문" }));
+    return null;
+  }
 }
 
 function killCurrent() {
@@ -118,26 +146,26 @@ export function startServer(opts: StartServerOptions = {}): Server {
       let body = "";
       req.on("data", c => body += c);
       req.on("end", () => {
-        const p = JSON.parse(body) as {
-          dep: string; arr: string; date: string; time: string;
-          seat: string; go: boolean;
-        };
+        const p = parseJsonBody<StartMacroPayload>(body, res);
+        if (!p) return;
 
         if (currentProcess) killCurrent();
 
-        const cliArgs = [
-          "--dep", p.dep, "--arr", p.arr,
-          "--date", p.date.replace(/-/g, ""), "--time", p.time,
-          "--seat", p.seat,
-        ];
-        if (p.go) cliArgs.push("--go");
+        const cliArgs = buildMacroCliArgs(p);
 
         broadcast("log", `[UI] 매크로 실행: ${cliArgs.join(" ")}`);
 
-        currentProcess = spawnMacro(cliArgs);
-        currentProcess.stdout?.on("data", d => broadcast("log", d.toString().trimEnd()));
-        currentProcess.stderr?.on("data", d => broadcast("log", d.toString().trimEnd()));
-        currentProcess.on("close", code => {
+        const child = spawnMacro(cliArgs);
+        currentProcess = child;
+        child.stdout?.on("data", d => broadcast("log", d.toString().trimEnd()));
+        child.stderr?.on("data", d => broadcast("log", d.toString().trimEnd()));
+        child.on("close", code => {
+          // 이 close 이벤트는 이 리스너가 등록된 시점의 child(옛 프로세스일 수 있음)에
+          // 대한 것이다 — 그 사이 /start가 다시 호출돼 currentProcess가 이미 다른
+          // (새) 프로세스로 교체됐다면, 여기서 currentProcess를 null로 덮어쓰면 안 된다.
+          // 이 가드 없이는 옛 프로세스의 지연된 close가 새로 시작한 프로세스의 상태를
+          // "stopped"로 잘못 표시하고 /stop이 그 새 프로세스를 죽이지 못하게 만든다.
+          if (currentProcess !== child) return;
           broadcast("log", `[UI] 프로세스 종료 (코드: ${code})`);
           broadcast("status", "stopped");
           currentProcess = null;
@@ -178,8 +206,9 @@ export function startServer(opts: StartServerOptions = {}): Server {
       let body = "";
       req.on("data", c => body += c);
       req.on("end", () => {
-        const { url } = JSON.parse(body) as { url: string };
-        saveWebhookUrl(url);
+        const parsed = parseJsonBody<{ url: string }>(body, res);
+        if (!parsed) return;
+        saveWebhookUrl(parsed.url);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true }));
       });
@@ -191,8 +220,9 @@ export function startServer(opts: StartServerOptions = {}): Server {
       let body = "";
       req.on("data", c => body += c);
       req.on("end", async () => {
-        const { url } = JSON.parse(body) as { url: string };
-        const result = await sendDiscordTest(url);
+        const parsed = parseJsonBody<{ url: string }>(body, res);
+        if (!parsed) return;
+        const result = await sendDiscordTest(parsed.url);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(result));
       });
@@ -227,18 +257,44 @@ export function startServer(opts: StartServerOptions = {}): Server {
     const actualPort = addr && typeof addr === "object" ? addr.port : PORT;
     const openUrl = `http://localhost:${actualPort}`;
     console.log(`[API] ${openUrl}${IS_SERVE ? " (serve 모드)" : ""}`);
-    if (openBrowser) {
-      setTimeout(() => exec(`open ${IS_SERVE ? openUrl : "http://localhost:3002"}`), 2000);
+
+    if (opts.portFile) {
+      writePortFile(opts.portFile, actualPort);
+      // 자기가 쓴 포트일 때만 지운다 — 교차 삭제 버그 수정 (ktx/ui.ts와 동일 이유)
+      const cleanup = () => { releasePortFile(opts.portFile!, actualPort); };
+      process.once("exit", cleanup);
+      process.once("SIGINT", () => { cleanup(); process.exit(); });
+      process.once("SIGTERM", () => { cleanup(); process.exit(); });
+    }
+
+    // dev 모드(vite 프록시)는 vite의 server.open이 자체 포트로 여는 걸 담당하므로
+    // 여기서는 serve 모드(단일 서버)일 때만 실제 바인딩된 URL을 연다.
+    if (openBrowser && IS_SERVE) {
+      setTimeout(() => exec(`open ${openUrl}`), 2000);
     }
   });
 
-  server.once("error", (err: NodeJS.ErrnoException) => {
-    if (err.code === "EADDRINUSE") {
+  // once가 아니라 on을 쓴다 — once였다면 EADDRINUSE 폴백으로 재시도한 listen(0)이
+  // 다시 에러를 내는 경우(극히 드물지만) 리스너가 이미 소진돼 unhandled error로
+  // 프로세스가 죽는다. EADDRINUSE 폴백은 최대 1회만 시도하고, 그 밖의 에러는 죽이지
+  // 않고 로그만 남긴다 — 서버 하나의 오류로 UI 전체(Electron 앱 포함)가 죽지 않게 한다.
+  //
+  // NOTE: listen(PORT, "127.0.0.1")처럼 호스트를 명시해 로컬호스트로 제한하는 방안도
+  // 검토했으나, 기본 listen(port)는 IPv6 와일드카드("::")로 바인딩되고 macOS에서는
+  // 이게 명시적 "127.0.0.1"(IPv4 전용) 바인딩과 충돌하지 않는다(직접 재현 확인) —
+  // 즉 이미 떠 있는 인스턴스(기본 바인딩)를 새 인스턴스가 EADDRINUSE로 감지하지
+  // 못하고 조용히 두 번째 서버가 뜨는 회귀가 생긴다. 이 EADDRINUSE 폴백은 기존
+  // 아키텍처가 의존하는 핵심 동작이라, 네트워크 노출 축소는 이번 범위에서 제외하고
+  // 별도로 다룬다.
+  let addrInUseRetried = false;
+  server.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EADDRINUSE" && !addrInUseRetried) {
+      addrInUseRetried = true;
       console.log(`[API] 포트 ${PORT} 사용 중 — 빈 포트 자동 배정`);
       server.listen(0);
       return;
     }
-    throw err;
+    console.error(`[API] 서버 오류: ${err.message}`);
   });
 
   server.listen(PORT);
@@ -253,5 +309,5 @@ function isMainModule(): boolean {
 }
 
 if (isMainModule()) {
-  startServer();
+  startServer({ portFile: join(import.meta.dirname, ".ui-port") });
 }

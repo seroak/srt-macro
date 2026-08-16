@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import type { Config, Status, LogLine } from "../types.ts";
+import { formatMacroFetchError } from "../macroFetchError.ts";
 
 function classifyLine(text: string): LogLine["type"] {
   if (text.startsWith("[UI]")) return "ui";
@@ -43,21 +44,27 @@ export function useSrtMacro() {
   const start = useCallback(async (config: Config) => {
     setLogs([]);
     setWaitingEnter(false);
-    await fetch("/start", {
+    const res = await fetch("/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(config),
     });
-  }, []);
+    if (!res.ok) addLog(formatMacroFetchError("시작", res.status, await res.text()));
+  }, [addLog]);
 
   const stop = useCallback(async () => {
-    await fetch("/stop", { method: "POST" });
+    const res = await fetch("/stop", { method: "POST" });
     setWaitingEnter(false);
-  }, []);
+    if (!res.ok) addLog(formatMacroFetchError("중지", res.status, await res.text()));
+  }, [addLog]);
 
   const enter = useCallback(async () => {
     setWaitingEnter(false);
-    await fetch("/enter", { method: "POST" });
+    const res = await fetch("/enter", { method: "POST" });
+    if (!res.ok) {
+      addLog(formatMacroFetchError("Enter 전송", res.status, await res.text()));
+      return;
+    }
     addLog("[UI] Enter 전송됨");
   }, [addLog]);
 
