@@ -49,10 +49,35 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set release title
+      - name: Dedupe release and set title
         if: github.ref_type == 'tag'
         shell: bash
         run: |
-          gh release edit "${{ github.ref_name }}" --title "Windows SRT ${{ github.ref_name }}" --repo "${{ github.repository }}"
+          # electron-builder's concurrent asset uploads can race and create two
+          # releases for the same tag. Keep the one with the most assets (the
+          # real installer), delete the rest, then set its title.
+          REPO="${{ github.repository }}"
+          TAG="${{ github.ref_name }}"
+          IDS=$(gh api "repos/$REPO/releases" --paginate \
+            --jq ".[] | select(.tag_name == \"$TAG\") | .id")
+
+          KEEP=""
+          KEEP_COUNT=-1
+          for id in $IDS; do
+            COUNT=$(gh api "repos/$REPO/releases/$id/assets" --jq 'length')
+            if [ "$COUNT" -gt "$KEEP_COUNT" ]; then
+              KEEP_COUNT="$COUNT"
+              KEEP="$id"
+            fi
+          done
+
+          for id in $IDS; do
+            if [ "$id" != "$KEEP" ]; then
+              echo "Deleting duplicate release $id (tag $TAG)"
+              gh api -X DELETE "repos/$REPO/releases/$id"
+            fi
+          done
+
+          gh api -X PATCH "repos/$REPO/releases/$KEEP" -f name="Windows SRT $TAG"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
