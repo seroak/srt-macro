@@ -5,6 +5,7 @@
   "type": "module",
   "description": "SRT 승차권 예매 폴링 매크로 (Playwright) + 웹 UI",
   "main": "dist-electron/main.mjs",
+  "repository": "https://github.com/seroak/srt-macro.git",
   "scripts": {
     "srt": "tsx run_srt.ts",
     "ui": "concurrently \"tsx ui.ts\" \"vite --config ui/vite.config.ts\"",
@@ -49,6 +50,9 @@
     ],
     "directories": {
       "output": "release"
+    },
+    "publish": {
+      "provider": "github"
     },
     "files": [
       "dist-electron/**/*",
